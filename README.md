@@ -16,13 +16,13 @@ This is a little-endian VM.
 
 ### Overview
 
-u32: magic number
+u32: magic number\
 u8: version
 
-u32: count
+u32: count\
 then 'count' String
 
-4b: number of classes
+4b: number of classes\
 then 'count' Class
 
 #### Magic number
@@ -35,35 +35,35 @@ Must be 1.
 
 #### String
 
-u16: length
+u16: length\
 then 'length' bytes
 
 #### Class
 
-String: name
+String: name\
 String: super type
 
-u8: count
+u8: count\
 then 'count' fields
 
-u8: count
+u8: count\
 then 'count' functions
 
 #### Field
 
-String: name
+String: name\
 bytecode: default value
 
 #### Function
 
-String: name
-u8: arity (number of parameters)
-u8: number of local variables
+String: name\
+u8: arity (number of parameters)\
+u8: number of local variables\
 bytecode: body of the function
 
 #### Bytecode
 
-u8/u16: u8 for a field's default value, u16 for a function's body
+u8/u16: u8 for a field's default value, u16 for a function's body\
 then that many bytes
 
 ## Opcodes
@@ -143,7 +143,7 @@ Then pushes `null`.
 
 ### OP_CALL (19)
 
-Takes the next 2 bytes to get an index into the `strings` array to get the name.
+Takes the next 2 bytes to get an index into the `strings` array to get the name.\
 Takes the next byte to know how many arguments are on the stack.
 
 ### OP_CALL_STATIC (20) [deprecated]
@@ -156,23 +156,23 @@ Takes the next 2 bytes to get the index of a local variable on the stack. And pu
 
 ### OP_STORE_LOCAL_VAR (22)
 
-Takes the next 2 bytes to get the index of a local variable on the stack.
-Pops the top of the stack and stores it in that local variable.
+Takes the next 2 bytes to get the index of a local variable on the stack.\
+Pops the top of the stack and stores it in that local variable.\
 Then pushes `null`.
 
 ### OP_ALLOCATE_VAR (23)
 
-Takes the next 2 bytes to get an index into the `strings` array to get the type name.
+Takes the next 2 bytes to get an index into the `strings` array to get the type name.\
 Pushes on the stack a variable of that type.
 
 ### OP_LOAD_FIELD_THIS (24)
 
-Takes the next 2 bytes to get an index into the `strings` array to get the field name.
+Takes the next 2 bytes to get an index into the `strings` array to get the field name.\
 Pushes on the stack the field of that name from the object at index 0 in the callframe.
 
 ### OP_STORE_FIELD_THIS (25)
 
-Takes the next 2 bytes to get an index into the `strings` array to get the field name.
+Takes the next 2 bytes to get an index into the `strings` array to get the field name.\
 Pops off the stack a variable and stores it in the field of that name in the object at index 0 in the callframe.
 
 ### OP_JUMP_IF (26)
