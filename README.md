@@ -179,6 +179,8 @@ Pops off the stack a variable and stores it in the field of that name in the obj
 
 The next byte if a relative offset. Jumps if the top value of the stack is `true`.
 
+**Beware**: the offset is in `opcode` not in `byte`. (might change later?)
+
 ### OP_JUMP (27)
 
 The next byte if a relative offset. Jumps.

@@ -1,0 +1,81 @@
+class String extends Object:
+	function count: 0x561905bfbfa0
+
+class List extends Object:
+	function new(): 0x561905bfc220
+	function count: 0x561905bfcc20
+	function push(_): 0x561905bfc020
+
+class Object:
+	function name: 0x561905bfc850
+	function supertype: 0x561905bfc440
+
+class $self extends Object:
+	function fib(_):
+		LoadLocalVar(1)
+		Constant(Integer(3))
+		LowerThan
+		JumpIf(12)
+		LoadModuleVar("$self")
+		LoadLocalVar(1)
+		Constant(Integer(1))
+		Sub
+		Call("fib(_)", 1)
+		LoadModuleVar("$self")
+		LoadLocalVar(1)
+		Constant(Integer(2))
+		Sub
+		Call("fib(_)", 1)
+		Add
+		Jump(7)
+		LoadLocalVar(1)
+		Constant(Integer(0))
+		Equal
+		JumpIf(2)
+		Constant(Integer(1))
+		Jump(1)
+		Constant(Integer(0))
+		Return
+	function main:
+		LoadModuleVar("System")
+		LoadModuleVar("$self")
+		Constant(Integer(28))
+		Call("fib(_)", 1)
+		Call("print(_)", 1)
+		Pop
+		Return
+
+class System extends Object:
+	function print(_,_,_,_): 0x561905bfc260
+	function print(_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfbf60
+	function print(_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc190
+	function write(_): 0x561905bfc700
+	function write(_,_,_,_,_): 0x561905bfc2a0
+	function print(_,_,_,_,_,_,_,_,_): 0x561905bfc740
+	function write(_,_,_,_,_,_,_,_,_): 0x561905bfc480
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfcc60
+	function write(_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc400
+	function print(_,_): 0x561905bfc620
+	function print(_): 0x561905bfc150
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfca40
+	function write(_,_,_): 0x561905bfc980
+	function print(_,_,_,_,_,_): 0x561905bfc2e0
+	function write(_,_,_,_): 0x561905bfc550
+	function print(): 0x561905bfcae0
+	function write(_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfcba0
+	function write(_,_,_,_,_,_,_,_): 0x561905bfc940
+	function write(_,_,_,_,_,_): 0x561905bfc810
+	function write(_,_,_,_,_,_,_,_,_,_): 0x561905bfc060
+	function print(_,_,_): 0x561905bfca00
+	function print(_,_,_,_,_): 0x561905bfc1d0
+	function print(_,_,_,_,_,_,_,_): 0x561905bfcb20
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc7d0
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfcbe0
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfbe80
+	function print(_,_,_,_,_,_,_,_,_,_): 0x561905bfbfe0
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc590
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc6c0
+	function write(_,_,_,_,_,_,_): 0x561905bfc9c0
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc320
+	function print(_,_,_,_,_,_,_): 0x561905bfcb60
+	function write(_,_): 0x561905bfbe40
