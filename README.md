@@ -4,7 +4,7 @@ RockVM
 A basic virtual machine for dynamically-typed languages. To build, just do `cargo build`.
 
 ```console
-$ simple-lisp file.bin    # execute the file
+$ simple-lisp file.bin    # execute the file by calling the function "main" in the class named "$self"
 $ simple-lisp file.bin -d # disassemble the file
 ```
 
