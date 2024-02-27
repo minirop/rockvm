@@ -22,12 +22,12 @@ u8: version
 u32: count\
 then 'count' String
 
-4b: number of classes\
+u32: number of classes\
 then 'count' Class
 
 #### Magic number
 
-'ROCK' in ASCII (or 0x4B434F52 in BE)
+'ROCK' in ASCII (or 0x4B434F52 in LE)
 
 #### Version
 
@@ -70,15 +70,15 @@ then that many bytes
 
 ### OP_RETURN (1)
 
-Pops the current call frame
+Pops the current call frame.
 
 ### OP_CONSTANT (2)
 
-Pushes a constant on the stack
+Pushes a constant on the stack.
 
 ### OP_NEGATE (3)
 
-Negates the top value on the stack (int or float only)
+Negates the top value on the stack (int or float only).
 
 ### OP_ADD (4)
 
@@ -98,15 +98,15 @@ Pops 2 values from the stack and pushes their fraction.
 
 ### OP_TRUE (8)
 
-Pushes `true`
+Pushes `true`.
 
 ### OP_FALSE (9)
 
-Pushes `false`
+Pushes `false`.
 
 ### OP_NULL (10)
 
-Pushes `null`
+Pushes `null`.
 
 ### OP_NOT (11)
 
