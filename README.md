@@ -146,9 +146,11 @@ Then pushes `null`.
 Takes the next 2 bytes to get an index into the `strings` array to get the name.\
 Takes the next byte to know how many arguments are on the stack.
 
-### OP_CALL_STATIC (20) [deprecated]
+### OP_LOOP (20)
 
-Does nothing.
+Identical to `OP_JUMP` but jumps backwards.
+
+**Beware**: the offset is in `opcode` not in `byte`. (might change later?)
 
 ### OP_LOAD_LOCAL_VAR (21)
 
@@ -177,13 +179,15 @@ Pops off the stack a variable and stores it in the field of that name in the obj
 
 ### OP_JUMP_IF (26)
 
-The next byte if a relative offset. Jumps if the top value of the stack is `true`.
+The next two bytes are a relative offset. Jumps if the top value of the stack is `true`.
 
 **Beware**: the offset is in `opcode` not in `byte`. (might change later?)
 
 ### OP_JUMP (27)
 
-The next byte if a relative offset. Jumps.
+The next byte if a forwards offset to jump to.
+
+**Beware**: the offset is in `opcode` not in `byte`. (might change later?)
 
 ### OP_DUP (28)
 

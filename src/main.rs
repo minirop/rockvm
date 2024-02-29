@@ -5,7 +5,6 @@ use std::fs::File;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::*;
-use std::ops::Neg;
 use std::fmt;
 use byteorder::{ReadBytesExt, LittleEndian};
 use clap::Parser;
@@ -31,14 +30,14 @@ enum Opcode {
     LoadModuleVar(String),
     StoreModuleVar(String),
     Call(String, u8),
-    CallStatic(String, u8),
     LoadLocalVar(usize),
     StoreLocalVar(usize),
     AllocateVar(String),
     LoadFieldThis(String),
     StoreFieldThis(String),
-    JumpIf(i8),
-    Jump(i8),
+    JumpIf(i16),
+    Jump(u8),
+    Loop(u8),
     Dup,
 
     DumpStack,
@@ -63,7 +62,7 @@ const OP_POP: u8 = 16;
 const OP_LOAD_MODULE_VAR: u8 = 17;
 const OP_STORE_MODULE_VAR: u8 = 18;
 const OP_CALL: u8 = 19;
-const OP_CALL_STATIC: u8 = 20;
+const OP_LOOP: u8 = 20;
 const OP_LOAD_LOCAL_VAR: u8 = 21;
 const OP_STORE_LOCAL_VAR: u8 = 22;
 const OP_ALLOCATE_VAR: u8 = 23;
@@ -298,7 +297,6 @@ impl Neg for Value {
 struct Function {
     name: String,
     arity: u8,
-    //is_static: bool,
     locals: u8,
     code: Chunk,
 }
@@ -319,7 +317,6 @@ impl Function {
 struct NativeFunction {
     name: String,
     arity: u8,
-    //is_static: bool,
     code: fn(&mut Vm),
 }
 
@@ -360,8 +357,6 @@ impl Vm {
     }
 
     fn push_callframe(&mut self, function: Function) {
-        //function.disassemble();
-
         for _ in 0..function.locals {
             self.push_null();
         }
@@ -516,13 +511,6 @@ impl Vm {
                 let args = buf[*i - 1];
                 Opcode::Call(strings[idx].clone(), args)
             },
-            OP_CALL_STATIC => {
-                *i += 2;
-                let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                *i += 1;
-                let args = buf[*i - 1];
-                Opcode::CallStatic(strings[idx].clone(), args)
-            },
             OP_LOAD_LOCAL_VAR => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
@@ -550,14 +538,19 @@ impl Vm {
                 Opcode::StoreFieldThis(strings[idx].clone())
             },
             OP_JUMP_IF => {
-                *i += 1;
-                let offset = (&buf[(*i - 1)..*i]).read_i8()?;
+                *i += 2;
+                let offset = (&buf[(*i - 2)..*i]).read_i16::<LittleEndian>()?;
                 Opcode::JumpIf(offset)
             },
             OP_JUMP => {
                 *i += 1;
-                let offset = (&buf[(*i - 1)..*i]).read_i8()?;
+                let offset = (&buf[(*i - 1)..*i]).read_u8()?;
                 Opcode::Jump(offset)
+            },
+            OP_LOOP => {
+                *i += 1;
+                let offset = (&buf[(*i - 1)..*i]).read_u8()?;
+                Opcode::Loop(offset)
             },
             OP_DUP => Opcode::Dup,
             _ => {
@@ -749,9 +742,11 @@ impl Vm {
 
                     self.push(var);
                 },
+                Opcode::Loop(offset) => {
+                    func.code.ip -= offset as usize;
+                },
                 Opcode::Jump(offset) => {
-                    let newip = (func.code.ip as i32 + offset as i32) as usize;
-                    func.code.ip = newip;
+                    func.code.ip += offset as usize;
                 },
                 Opcode::JumpIf(offset) => {
                     let var = self.stack.pop().unwrap();
@@ -771,7 +766,6 @@ impl Vm {
                     self.push(var.clone());
                 },
                 Opcode::DumpStack => self.dump_stack("opcode"),
-                _ => panic!("Unhandled: {:?}", inst),
             };
         }
     }
