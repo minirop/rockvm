@@ -331,6 +331,8 @@ struct Fiber {
     callstack: Vec<Function>,
     stackbase: Vec<usize>,
     stack: Vec<Value>,
+    error: Option<String>,
+    trying: bool,
 }
 
 impl Fiber {
@@ -340,6 +342,8 @@ impl Fiber {
             callstack: vec![],
             stackbase: vec![],
             stack: vec![],
+            error: None,
+            trying: false,
         }
     }
 
@@ -367,6 +371,10 @@ impl Fiber {
 
     fn push_null(&mut self) {
         self.push(Value::Null);
+    }
+
+    fn push_bool(&mut self, value: bool) {
+        self.stack.push(Value::Bool(value));
     }
 
     fn dump_stack(&self, name: &str) {
@@ -640,8 +648,27 @@ impl Vm {
     }
 
     fn run(&mut self) -> InterpretResult {
-        loop {
+        'mainloop: loop {
             let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
+            if let Some(msg) = &fiber.error {
+                let msg = msg.clone();
+
+                while !fiber.trying {
+                    drop(fiber);
+                    if self.fibers.len() == 0 {
+                        panic!("A error as occured: {msg}");
+                    } else {
+                        self.fibers.pop();
+                        fiber = self.fibers.last_mut().unwrap().borrow_mut();
+                    }
+                }
+
+                drop(fiber);
+                self.fibers.pop();
+                fiber = self.fibers.last_mut().unwrap().borrow_mut();
+                fiber.push(Value::String(msg));
+            }
+
             let func = fiber.callstack.last_mut().unwrap();
             func.code.ip += 1;
             let inst = func.code.code[func.code.ip - 1].clone();
@@ -696,8 +723,8 @@ impl Vm {
                     let l = fiber.pop();
                     fiber.push(l / r);
                 },
-                Opcode::True => fiber.push(Value::Bool(true)),
-                Opcode::False => fiber.push(Value::Bool(false)),
+                Opcode::True => fiber.push_bool(true),
+                Opcode::False => fiber.push_bool(false),
                 Opcode::Null => fiber.push_null(),
                 Opcode::Not => {
                     let val = fiber.pop();
@@ -706,28 +733,29 @@ impl Vm {
                 Opcode::Equal => {
                     let r = fiber.pop();
                     let l = fiber.pop();
-                    fiber.push(Value::Bool(l == r));
+                    fiber.push_bool(l == r);
                 },
                 Opcode::LowerThan => {
                     let r = fiber.pop();
                     let l = fiber.pop();
-                    fiber.push(Value::Bool(l < r));
+                    fiber.push_bool(l < r);
                 },
                 Opcode::GreaterThan => {
                     let r = fiber.pop();
                     let l = fiber.pop();
-                    fiber.push(Value::Bool(l > r));
+                    fiber.push_bool(l > r);
                 },
                 Opcode::Closure(name) => {
                     let val = fiber.pop();
                     let Value::Class(class) = val else {
-                        panic!("{:?} => {name}", val);
+                        fiber.error = Some(format!("{:?} => {name}", val));
+                        continue;
                     };
 
                     if let Some(func) = class.borrow().functions.get(&name) {
                         fiber.push(Value::Closure(func.clone()));
                     } else {
-                        panic!("{} does not have a function named {name}", class.borrow().name);
+                        fiber.error = Some(format!("{} does not have a function named {name}", class.borrow().name));
                     };
                 },
                 Opcode::Pop => {
@@ -736,7 +764,10 @@ impl Vm {
                 Opcode::LoadModuleVar(name) => {
                     let var = match self.variables.get(&name) {
                         Some(val) => val,
-                        None => panic!("Unknown variable '{}'.", name),
+                        None => {
+                            fiber.error = Some(format!("Unknown variable '{}'.", name));
+                            continue;
+                        },
                     };
                     fiber.push(var.clone());
                 },
@@ -749,37 +780,46 @@ impl Vm {
                         Value::Class(c) => c,
                         Value::Object(o) => {
                             let Some(Value::Class(c)) = self.variables.get(&o.borrow().class) else {
-                                panic!("Object of unknown class: {}", o.borrow().class);
+                                fiber.error = Some(format!("Object of unknown class: {}", o.borrow().class));
+                                continue;
                             };
 
                             c.clone()
                         },
                         Value::String(_) => {
                             let Some(Value::Class(c)) = self.variables.get("String") else {
-                                panic!("");
+                                fiber.error = Some(format!("123"));
+                                continue;
                             };
 
                             c.clone()
                         },
                         Value::List(_) => {
                             let Some(Value::Class(c)) = self.variables.get("List") else {
-                                panic!("");
+                                fiber.error = Some(format!("123"));
+                                continue;
                             };
 
                             c.clone()
                         },
                         Value::Fiber(_) => {
                             let Some(Value::Class(c)) = self.variables.get("Fiber") else {
-                                panic!("");
+                                fiber.error = Some(format!("123"));
+                                continue;
                             };
 
                             c.clone()
                         },
-                        _ => panic!("Calling '{name}' with {:?}.", top),
+                        _ => {
+                            fiber.error = Some(format!("Calling '{name}' with {:?}.", top));
+                            continue;
+                        },
                     };
 
                     drop(fiber);
-                    self.call_method(&class.borrow(), &name, args);
+                    let err = self.call_method(&class.borrow(), &name, args, &class.borrow().name);
+                    let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
+                    fiber.error = err;
                 },
                 Opcode::LoadLocalVar(index) => {
                     let idx = stackbase + index as usize;
@@ -801,10 +841,14 @@ impl Vm {
                                 if let Value::Class(class) = val {
                                     class
                                 } else {
-                                    panic!("'{name}' is not a class.");
+                                    fiber.error = Some(format!("'{name}' is not a class."));
+                                    continue 'mainloop;
                                 }
                             },
-                            None => panic!("Unknown variable '{}'.", name),
+                            None => {
+                                fiber.error = Some(format!("Unknown variable '{}'.", name));
+                                continue 'mainloop;
+                            },
                         };
 
                         for (name, default) in &class.borrow().fields {
@@ -817,7 +861,10 @@ impl Vm {
                                         Opcode::Constant(c) => {
                                             stack.push(c);
                                         },
-                                        _ => panic!("{:?} is not allowed in field initialiser", op),
+                                        _ => {
+                                            fiber.error = Some(format!("{:?} is not allowed in field initialiser", op));
+                                            return Value::Null;
+                                        },
                                     };
                                     id += 1;
                                 }
@@ -826,6 +873,11 @@ impl Vm {
 
                                 stack[0].clone()
                             }();
+
+                            if fiber.error.is_some() {
+                                continue 'mainloop;
+                            }
+
                             fields.insert(name.clone(), value);
                         }
 
@@ -849,7 +901,8 @@ impl Vm {
                 Opcode::LoadFieldThis(name) => {
                     let val = &fiber.stack[stackbase];
                     let Value::Object(obj) = val else {
-                        panic!("{:?} => {name}", val);
+                        fiber.error = Some(format!("{:?} => {name}", val));
+                        continue;
                     };
 
                     let var = obj.borrow().fields.get(&name).unwrap().clone();
@@ -859,7 +912,8 @@ impl Vm {
                     let var = fiber.pop();
                     let val = fiber.stack.get_mut(stackbase).unwrap();
                     let Value::Object(ref mut obj) = val else {
-                        panic!("{:?} => {name}", val);
+                        fiber.error = Some(format!("{:?} => {name}", val));
+                        continue;
                     };
 
                     if let Some(field) = obj.borrow_mut().fields.get_mut(&name) {
@@ -881,7 +935,10 @@ impl Vm {
                     let cond = match var {
                         Value::Bool(b) => b,
                         Value::Integer(i) => i != 0,
-                        _ => panic!("false"),                        
+                        _ => {
+                            fiber.error = Some(format!("false"));
+                            continue 'mainloop;
+                        },
                     };
 
                     if cond {
@@ -899,48 +956,49 @@ impl Vm {
         }
     }
 
-    fn call_method(&mut self, class: &Class, name: &str, args: u8) {
+    fn call_method(&mut self, class: &Class, name: &str, args: u8, orig_class: &str) -> Option<String> {
         if let Some(func) = class.functions.get(name) {
-            self.call(func, args);
-            return;
+            return self.call(func, args);
         }
 
         if let Some(func) = class.natives.get(name) {
-            self.call_native(func, args);
-            return;
+            return self.call_native(func, args);
         }
 
         if let Some(supertype_name) = &class.supertype {
             let Some(supertype) = self.variables.get(supertype_name) else {
-                panic!("'{}' not found.", supertype_name);
+                return Some(format!("'{}' not found.", supertype_name));
             };
             let Value::Class(supertype_class) = supertype else {
-                panic!("'{}' is not a class.", supertype_name);
+                return Some(format!("'{}' is not a class.", supertype_name));
             };
 
             let supertype_class = supertype_class.clone();
-            self.call_method(&supertype_class.borrow(), name, args);
-            return;
+            return self.call_method(&supertype_class.borrow(), name, args, orig_class);
         }
 
-        panic!("'{}' doesn't have function named '{}'.", class.name, name);
+        Some(format!("'{}' doesn't have function named '{}'.", orig_class, name))
     }
 
-    fn call(&mut self, func: &Function, args: u8) {
+    fn call(&mut self, func: &Function, args: u8) -> Option<String> {
         if args != func.arity {
-            panic!("{} call: {} vs {}", func.name, func.arity, args);
+            return Some(format!("{} call: {} vs {}", func.name, func.arity, args));
         }
 
         let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
         fiber.push_callframe(func.clone());
+
+        None
     }
 
-    fn call_native(&mut self, func: &NativeFunction, args: u8) {
+    fn call_native(&mut self, func: &NativeFunction, args: u8) -> Option<String> {
         if args != func.arity {
-            panic!("{} call: {} vs {}", func.name, func.arity, args);
+            return Some(format!("{} call: {} vs {}", func.name, func.arity, args));
         }
 
         (func.code)(self);
+
+        None
     }
 }
 
@@ -973,7 +1031,7 @@ fn main() {
     };
 
     let test_class = test_class.clone();
-    vm.call_method(&test_class.borrow(), "main", 0);
+    vm.call_method(&test_class.borrow(), "main", 0, &test_class.borrow().name);
     vm.run();
 }
 
@@ -1231,17 +1289,25 @@ fn load_fiber(vm: &mut Vm) {
             fiber.push(Value::Fiber(Rc::new(RefCell::new(new_fiber))));
         },
     });
+
     nats.insert("call(_)".into(), NativeFunction {
         name: "call(_)".into(),
         arity: 1,
         code: |vm| {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
-            let _top = fiber.stack.pop().unwrap();
+            let val = fiber.pop();
+            let top = fiber.pop();
+            drop(fiber);
 
-            fiber.push_null();
-            todo!();
+            let Value::Fiber(new_fiber) = top else {
+                panic!("{:?} => Fiber.call()", top);
+            };
+
+            new_fiber.borrow_mut().push(val);
+            vm.fibers.push(new_fiber);
         },
     });
+
     nats.insert("call()".into(), NativeFunction {
         name: "call()".into(),
         arity: 0,
@@ -1258,6 +1324,44 @@ fn load_fiber(vm: &mut Vm) {
             vm.fibers.push(new_fiber);
         },
     });
+
+    nats.insert("try(_)".into(), NativeFunction {
+        name: "try(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let val = fiber.pop();
+            let top = fiber.pop();
+            drop(fiber);
+
+            let Value::Fiber(new_fiber) = top else {
+                panic!("{:?} => Fiber.try()", top);
+            };
+
+            new_fiber.borrow_mut().push(val);
+            new_fiber.borrow_mut().trying = true;
+            vm.fibers.push(new_fiber);
+        },
+    });
+
+    nats.insert("try()".into(), NativeFunction {
+        name: "try()".into(),
+        arity: 0,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.pop();
+            drop(fiber);
+
+            let Value::Fiber(new_fiber) = top else {
+                panic!("{:?} => Fiber.try()", top);
+            };
+
+            new_fiber.borrow_mut().push_null();
+            new_fiber.borrow_mut().trying = true;
+            vm.fibers.push(new_fiber);
+        },
+    });
+
     nats.insert("yield(_)".into(), NativeFunction {
         name: "yield(_)".into(),
         arity: 1,
@@ -1271,6 +1375,45 @@ fn load_fiber(vm: &mut Vm) {
 
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             fiber.push(top);
+        },
+    });
+
+    nats.insert("abort(_)".into(), NativeFunction {
+        name: "abort(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.pop();
+            fiber.pop();
+
+            println!("aborting");
+            match top {
+                Value::Null => {},
+                Value::String(s) => fiber.error = Some(s),
+                _ => panic!("Invalid value given to Fiber.abort(_). Null or a string. Got {:?}.", top),
+            };
+            
+            fiber.push_null();
+        },
+    });
+
+    nats.insert("isDone".into(), NativeFunction {
+        name: "isDone".into(),
+        arity: 0,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.pop();
+            let Value::Fiber(new_fiber) = top else {
+                fiber.error = Some(format!("Fiber.isDone expects a fiber. Got {:?}.", top));
+                fiber.push_null();
+                return;
+            };
+
+            if new_fiber.borrow().callstack.len() == 0 {
+                fiber.push_bool(true);
+            } else {
+                fiber.push_bool(false);
+            }
         },
     });
 
