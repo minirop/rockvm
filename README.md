@@ -124,9 +124,11 @@ Pops 2 values from the stack and pushes `true` if they are equals, `false` other
 
 Pops 2 values from the stack and pushes `true` if they are equals, `false` otherwise.
 
-### OP_PRINT (15) [deprecated]
+### OP_CLOSURE (15)
 
-Pops the top of the stack and prints it.
+Pushes a closure on the stack. Takes the next 2 bytes to get an index into the `strings` array to get the name.
+
+**Beware**: doesn't capture anything at the moment.
 
 ### OP_POP (16)
 
