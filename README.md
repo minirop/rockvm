@@ -128,7 +128,7 @@ Pops 2 values from the stack and pushes `true` if they are equals, `false` other
 
 Pushes a closure on the stack. Takes the next 2 bytes to get an index into the `strings` array to get the name.
 
-**Beware**: doesn't capture anything at the moment.
+**Warning**: doesn't capture anything at the moment.
 
 ### OP_POP (16)
 
@@ -152,7 +152,7 @@ Takes the next byte to know how many arguments are on the stack.
 
 Identical to `OP_JUMP` but jumps backwards.
 
-**Beware**: the offset is in `opcode` not in `byte`. (might change later?)
+**Warning**: the offset is in `opcode` not in `byte`. (might change later?)
 
 ### OP_LOAD_LOCAL_VAR (21)
 
@@ -183,13 +183,13 @@ Pops off the stack a variable and stores it in the field of that name in the obj
 
 The next two bytes are a relative offset. Jumps if the top value of the stack is `true`.
 
-**Beware**: the offset is in `opcode` not in `byte`. (might change later?)
+**Warning**: the offset is in `opcode` not in `byte`. (might change later?)
 
 ### OP_JUMP (27)
 
-The next byte if a forwards offset to jump to.
+The next byte is a forwards offset to jump to.
 
-**Beware**: the offset is in `opcode` not in `byte`. (might change later?)
+**Warning**: the offset is in `opcode` not in `byte`. (might change later?)
 
 ### OP_DUP (28)
 
