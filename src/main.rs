@@ -25,19 +25,20 @@ enum Opcode {
     Equal,
     LowerThan,
     GreaterThan,
-    Closure(String),
+    Closure(Rc<str>),
     Pop,
-    LoadModuleVar(String),
-    StoreModuleVar(String),
-    Call(String, u8),
+    LoadModuleVar(Rc<str>),
+    StoreModuleVar(Rc<str>),
+    Call(Rc<str>, u8),
     LoadLocalVar(usize),
     StoreLocalVar(usize),
-    AllocateVar(String),
-    LoadFieldThis(String),
-    StoreFieldThis(String),
-    JumpIf(i16),
+    AllocateVar(Rc<str>),
+    LoadFieldThis(Rc<str>),
+    StoreFieldThis(Rc<str>),
+    JumpIf(u8),
     Jump(u8),
     Loop(u8),
+    LoopIf(u8),
     Dup,
 
     DumpStack,
@@ -71,22 +72,22 @@ const OP_STORE_FIELD_THIS: u8 = 25;
 const OP_JUMP_IF: u8 = 26;
 const OP_JUMP: u8 = 27;
 const OP_DUP: u8 = 28;
-const OP_DUMP_STACK: u8 = 29;
-
+const OP_LOOP_IF: u8 = 29;
+const OP_DUMP_STACK: u8 = 255;
 
 #[derive(Debug, Clone)]
 struct Class {
-    name: String,
-    supertype: Option<String>,
-    fields: HashMap<String, Vec<Opcode>>,
-    functions: HashMap<String, Function>,
-    natives: HashMap<String, NativeFunction>,
+    name: Rc<str>,
+    supertype: Option<Rc<str>>,
+    fields: HashMap<Rc<str>, Vec<Opcode>>,
+    functions: HashMap<Rc<str>, Function>,
+    natives: HashMap<Rc<str>, NativeFunction>,
 }
 
 #[derive(Debug, Clone)]
 struct Object {
-    class: String,
-    fields: HashMap<String, Value>,
+    class: Rc<str>,
+    fields: HashMap<Rc<str>, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -95,7 +96,7 @@ enum Value {
     Bool(bool),
     Integer(i32),
     Float(f32),
-    String(String),
+    String(Rc<str>),
     Class(Rc<RefCell<Class>>),
     Object(Rc<RefCell<Object>>),
     List(Vec<Value>),
@@ -131,9 +132,9 @@ impl Add for Value {
             },
             Value::String(string) => {
                 match other {
-                    Value::String(string2) => Value::String(format!("{}{}", string, string2)),
-                    Value::Integer(i) => Value::String(format!("{}{}", string, i)),
-                    Value::Float(f) => Value::String(format!("{}{}", string, f)),
+                    Value::String(string2) => Value::String(format!("{}{}", string, string2).into()),
+                    Value::Integer(i) => Value::String(format!("{}{}", string, i).into()),
+                    Value::Float(f) => Value::String(format!("{}{}", string, f).into()),
                     _ => panic!("'{}' + '{}'", string, other),
                 }
             },
@@ -187,7 +188,7 @@ impl Mul for Value {
             },
             Value::String(string) => {
                 match other {
-                    Value::Integer(i) => Value::String(format!("{}", string.repeat(i as usize))),
+                    Value::Integer(i) => Value::String(format!("{}", string.repeat(i as usize)).into()),
                     _ => panic!("'{}' + '{}'", string, other),
                 }
             },
@@ -225,10 +226,9 @@ impl Not for Value {
 
     fn not(self) -> Self {
         match self {
-            Value::Float(f) => Value::Bool(f == 0.0),
             Value::Bool(b) => Value::Bool(!b),
             Value::Null => Value::Bool(true),
-            _ => panic!("NOT {}", self),
+            _ => Value::Bool(false),
         }
     }
 }
@@ -276,8 +276,15 @@ impl fmt::Display for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Integer(i) => write!(f, "{}", i),
             Value::Class(c) => write!(f, "<class '{}'>", c.borrow().name),
-            Value::Object(o) => write!(f, "<object of '{}'>", o.borrow().class),
-            Value::List(list) => write!(f, "<list '{}'>", list.len()),
+            Value::Object(o) => write!(f, "<object of type '{}'>", o.borrow().class),
+            Value::List(list) => {
+                write!(f, "[").unwrap();
+                for i in 0..list.len() {
+                    if i > 0 { write!(f, ", ").unwrap(); }
+                    write!(f, "{}", list[i]).unwrap();
+                }
+                write!(f, "]")
+            },
             Value::Closure(_) => write!(f, "<closure>"),
             Value::Fiber(_) => write!(f, "<fiber>"),
         }
@@ -290,6 +297,7 @@ impl Neg for Value {
     fn neg(self) -> Self::Output {
         match self {
             Value::Float(f) => Value::Float(-f),
+            Value::Integer(i) => Value::Integer(-i),
             _ => panic!("Can't negate {}", self),
         }
     }
@@ -299,7 +307,7 @@ impl Neg for Value {
 #[derive(Debug, Clone)]
 #[allow(unused)]
 struct Function {
-    name: String,
+    name: Rc<str>,
     arity: u8,
     locals: u8,
     code: Chunk,
@@ -319,7 +327,7 @@ impl Function {
 #[derive(Debug, Clone)]
 #[allow(unused)]
 struct NativeFunction {
-    name: String,
+    name: Rc<str>,
     arity: u8,
     code: fn(&mut Vm),
 }
@@ -331,7 +339,7 @@ struct Fiber {
     callstack: Vec<Function>,
     stackbase: Vec<usize>,
     stack: Vec<Value>,
-    error: Option<String>,
+    error: Option<Rc<str>>,
     trying: bool,
 }
 
@@ -348,11 +356,12 @@ impl Fiber {
     }
 
     fn push_callframe(&mut self, function: Function) {
+        self.stackbase.push(self.stack.len() - function.arity as usize - 1);
+
         for _ in 0..function.locals {
             self.push_null();
         }
 
-        self.stackbase.push(self.stack.len() - function.arity as usize);
         self.callstack.push(function);
     }
 
@@ -379,8 +388,15 @@ impl Fiber {
 
     fn dump_stack(&self, name: &str) {
         println!("===== STACK {name} =====");
-        for s in &self.stack {
-            println!("- {}", s);
+        let mut current = 0;
+        for (i, s) in self.stack.iter().enumerate() {
+            if current < self.stackbase.len() && self.stackbase[current] == i {
+                print!("----- {} -----\n", self.callstack[current].name);
+                current += 1;
+            }
+
+            let index = i - self.stackbase[current - 1];
+            println!("{}/ {}", index, s);
         }
         println!("=====  END  {name} =====");
     }
@@ -408,7 +424,8 @@ impl Chunk {
 #[derive(Debug)]
 struct Vm {
     fibers: Vec<Rc<RefCell<Fiber>>>,
-    variables: HashMap<String, Value>,
+    variables: HashMap<Rc<str>, Value>,
+    strings: Vec<Rc<str>>,
 }
 
 impl Vm {
@@ -416,6 +433,7 @@ impl Vm {
         Self {
             fibers: vec![Rc::new(RefCell::new(Fiber::new()))],
             variables: HashMap::new(),
+            strings: vec![],
         }
     }
 
@@ -460,10 +478,9 @@ impl Vm {
 
         let version = f.read_u8()?; assert_eq!(version, 1);
 
-        let mut strings = vec![];
         let strings_len = f.read_u32::<LittleEndian>()?;
         for _ in 0..strings_len {
-            strings.push(read_string(&mut f));
+            self.strings.push(read_string(&mut f));
         }
 
         let classes_len = f.read_u32::<LittleEndian>()?;
@@ -486,10 +503,10 @@ impl Vm {
                     let c = buf[i];
                     i += 1;
 
-                    default.push(self.decode(&name, c, &mut buf, &mut i, &strings)?);
+                    default.push(self.decode(&name, c, &mut buf, &mut i)?);
                 }
 
-                fields.insert(name.clone(), default);
+                fields.insert(name, default);
             }
 
             let functions_len = f.read_u8()?;
@@ -498,7 +515,6 @@ impl Vm {
             for _ in 0..functions_len {
                 let name = read_string(&mut f);
                 let arity = f.read_u8()?;
-                //let is_static = f.read_u8()? > 0;
                 let locals = f.read_u8()?;
                 
                 let size = f.read_u16::<LittleEndian>()? as usize;
@@ -511,11 +527,11 @@ impl Vm {
                     let c = buf[i];
                     i += 1;
 
-                    code.code.push(self.decode(&name, c, &mut buf, &mut i, &strings)?);
+                    code.code.push(self.decode(&name, c, &mut buf, &mut i)?);
                 }
 
                 functions.insert(name.clone(), Function {
-                    name, arity, locals, code,
+                    name: name.clone(), arity, locals, code,
                 });
             }
 
@@ -529,7 +545,7 @@ impl Vm {
         Ok(())
     }
 
-    fn decode(&self, name: &str, c: u8, buf: &mut Vec<u8>, i: &mut usize, strings: &Vec<String>) -> std::io::Result<Opcode> {
+    fn decode(&self, name: &str, c: u8, buf: &mut Vec<u8>, i: &mut usize) -> std::io::Result<Opcode> {
         let ret = match c {
             OP_RETURN => Opcode::Return,
             OP_CONSTANT => {
@@ -554,7 +570,7 @@ impl Vm {
                     VAL_STRING => {
                         *i += 3;
                         let int = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                        Value::String(strings[int].clone())
+                        Value::String(self.strings[int].clone())
                     },
                     VAL_CLASS => panic!("class not handled."),
                     _ => panic!("Unknown value type {t}."),
@@ -576,25 +592,25 @@ impl Vm {
             OP_CLOSURE => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                Opcode::Closure(strings[idx].clone())
+                Opcode::Closure(self.strings[idx].clone())
             },
             OP_POP => Opcode::Pop,
             OP_LOAD_MODULE_VAR => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                Opcode::LoadModuleVar(strings[idx].clone())
+                Opcode::LoadModuleVar(self.strings[idx].clone())
             },
             OP_STORE_MODULE_VAR => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                Opcode::StoreModuleVar(strings[idx].clone())
+                Opcode::StoreModuleVar(self.strings[idx].clone())
             },
             OP_CALL => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
                 *i += 1;
                 let args = buf[*i - 1];
-                Opcode::Call(strings[idx].clone(), args)
+                Opcode::Call(self.strings[idx].clone(), args)
             },
             OP_LOAD_LOCAL_VAR => {
                 *i += 2;
@@ -610,21 +626,21 @@ impl Vm {
             OP_ALLOCATE_VAR => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                Opcode::AllocateVar(strings[idx].clone())
+                Opcode::AllocateVar(self.strings[idx].clone())
             },
             OP_LOAD_FIELD_THIS => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                Opcode::LoadFieldThis(strings[idx].clone())
+                Opcode::LoadFieldThis(self.strings[idx].clone())
             },
             OP_STORE_FIELD_THIS => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                Opcode::StoreFieldThis(strings[idx].clone())
+                Opcode::StoreFieldThis(self.strings[idx].clone())
             },
             OP_JUMP_IF => {
-                *i += 2;
-                let offset = (&buf[(*i - 2)..*i]).read_i16::<LittleEndian>()?;
+                *i += 1;
+                let offset = (&buf[(*i - 1)..*i]).read_u8()?;
                 Opcode::JumpIf(offset)
             },
             OP_JUMP => {
@@ -636,6 +652,11 @@ impl Vm {
                 *i += 1;
                 let offset = (&buf[(*i - 1)..*i]).read_u8()?;
                 Opcode::Loop(offset)
+            },
+            OP_LOOP_IF => {
+                *i += 1;
+                let offset = (&buf[(*i - 1)..*i]).read_u8()?;
+                Opcode::LoopIf(offset)
             },
             OP_DUP => Opcode::Dup,
             _ => {
@@ -655,10 +676,11 @@ impl Vm {
 
                 while !fiber.trying {
                     drop(fiber);
+
+                    self.fibers.pop();
                     if self.fibers.len() == 0 {
                         panic!("A error as occured: {msg}");
                     } else {
-                        self.fibers.pop();
                         fiber = self.fibers.last_mut().unwrap().borrow_mut();
                     }
                 }
@@ -671,7 +693,8 @@ impl Vm {
 
             let func = fiber.callstack.last_mut().unwrap();
             func.code.ip += 1;
-            let inst = func.code.code[func.code.ip - 1].clone();
+            let ip = func.code.ip - 1;
+            let inst = func.code.code[ip].clone();
             let stackbase = fiber.stackbase.last().unwrap().clone();
 
             match inst {
@@ -748,14 +771,14 @@ impl Vm {
                 Opcode::Closure(name) => {
                     let val = fiber.pop();
                     let Value::Class(class) = val else {
-                        fiber.error = Some(format!("{:?} => {name}", val));
+                        fiber.error = Some(format!("{:?} => {name}", val).into());
                         continue;
                     };
 
                     if let Some(func) = class.borrow().functions.get(&name) {
                         fiber.push(Value::Closure(func.clone()));
                     } else {
-                        fiber.error = Some(format!("{} does not have a function named {name}", class.borrow().name));
+                        fiber.error = Some(format!("{} does not have a function named {name}", class.borrow().name).into());
                     };
                 },
                 Opcode::Pop => {
@@ -765,7 +788,7 @@ impl Vm {
                     let var = match self.variables.get(&name) {
                         Some(val) => val,
                         None => {
-                            fiber.error = Some(format!("Unknown variable '{}'.", name));
+                            fiber.error = Some(format!("Unknown variable '{}'.", name).into());
                             continue;
                         },
                     };
@@ -780,7 +803,7 @@ impl Vm {
                         Value::Class(c) => c,
                         Value::Object(o) => {
                             let Some(Value::Class(c)) = self.variables.get(&o.borrow().class) else {
-                                fiber.error = Some(format!("Object of unknown class: {}", o.borrow().class));
+                                fiber.error = Some(format!("Object of unknown class: {}", o.borrow().class).into());
                                 continue;
                             };
 
@@ -788,7 +811,7 @@ impl Vm {
                         },
                         Value::String(_) => {
                             let Some(Value::Class(c)) = self.variables.get("String") else {
-                                fiber.error = Some(format!("123"));
+                                fiber.error = Some("Can't find class 'String'.".into());
                                 continue;
                             };
 
@@ -796,7 +819,7 @@ impl Vm {
                         },
                         Value::List(_) => {
                             let Some(Value::Class(c)) = self.variables.get("List") else {
-                                fiber.error = Some(format!("123"));
+                                fiber.error = Some("Can't find class 'List'.".into());
                                 continue;
                             };
 
@@ -804,14 +827,30 @@ impl Vm {
                         },
                         Value::Fiber(_) => {
                             let Some(Value::Class(c)) = self.variables.get("Fiber") else {
-                                fiber.error = Some(format!("123"));
+                                fiber.error = Some("Can't find class 'Fiber'.".into());
                                 continue;
                             };
 
                             c.clone()
                         },
+                        Value::Bool(_) => {
+                            let Some(Value::Class(c)) = self.variables.get("Bool") else {
+                                fiber.error = Some("Can't find class 'Bool'.".into());
+                                continue;
+                            };
+
+                            c.clone()
+                        },
+                        Value::Closure(_) => {
+                            let Some(Value::Class(c)) = self.variables.get("Fn") else {
+                                fiber.error = Some("Can't find class 'Fn'.".into());
+                                continue;
+                            };
+
+                            c.clone()
+                        }
                         _ => {
-                            fiber.error = Some(format!("Calling '{name}' with {:?}.", top));
+                            fiber.error = Some(format!("Calling '{name}' with {:?}.", top).into());
                             continue;
                         },
                     };
@@ -841,12 +880,12 @@ impl Vm {
                                 if let Value::Class(class) = val {
                                     class
                                 } else {
-                                    fiber.error = Some(format!("'{name}' is not a class."));
+                                    fiber.error = Some(format!("'{name}' is not a class.").into());
                                     continue 'mainloop;
                                 }
                             },
                             None => {
-                                fiber.error = Some(format!("Unknown variable '{}'.", name));
+                                fiber.error = Some(format!("Unknown variable '{}'.", name).into());
                                 continue 'mainloop;
                             },
                         };
@@ -862,7 +901,7 @@ impl Vm {
                                             stack.push(c);
                                         },
                                         _ => {
-                                            fiber.error = Some(format!("{:?} is not allowed in field initialiser", op));
+                                            fiber.error = Some(format!("{:?} is not allowed in field initialiser.", op).into());
                                             return Value::Null;
                                         },
                                     };
@@ -901,7 +940,7 @@ impl Vm {
                 Opcode::LoadFieldThis(name) => {
                     let val = &fiber.stack[stackbase];
                     let Value::Object(obj) = val else {
-                        fiber.error = Some(format!("{:?} => {name}", val));
+                        fiber.error = Some(format!("{:?} => {name}", val).into());
                         continue;
                     };
 
@@ -912,7 +951,7 @@ impl Vm {
                     let var = fiber.pop();
                     let val = fiber.stack.get_mut(stackbase).unwrap();
                     let Value::Object(ref mut obj) = val else {
-                        fiber.error = Some(format!("{:?} => {name}", val));
+                        fiber.error = Some(format!("{:?} => {name}", val).into());
                         continue;
                     };
 
@@ -924,7 +963,8 @@ impl Vm {
                 },
                 Opcode::Loop(offset) => {
                     let func = fiber.callstack.last_mut().unwrap();
-                    func.code.ip -= offset as usize;
+                    // "ip" is past loop, so + 2 to place it before loop.
+                    func.code.ip -= (offset + 2) as usize;
                 },
                 Opcode::Jump(offset) => {
                     let func = fiber.callstack.last_mut().unwrap();
@@ -936,7 +976,7 @@ impl Vm {
                         Value::Bool(b) => b,
                         Value::Integer(i) => i != 0,
                         _ => {
-                            fiber.error = Some(format!("false"));
+                            fiber.error = Some("false".into());
                             continue 'mainloop;
                         },
                     };
@@ -947,16 +987,35 @@ impl Vm {
                         func.code.ip = newip;
                     }
                 },
+                Opcode::LoopIf(offset) => {
+                    let var = fiber.stack.pop().unwrap();
+                    let cond = match var {
+                        Value::Bool(b) => b,
+                        Value::Integer(i) => i != 0,
+                        _ => {
+                            fiber.error = Some("false".into());
+                            continue 'mainloop;
+                        },
+                    };
+
+                    if cond {
+                        let func = fiber.callstack.last_mut().unwrap();
+                        let newip = (func.code.ip as i32 - offset as i32) as usize;
+                        func.code.ip = newip;
+                    }
+                },
                 Opcode::Dup => {
                     let var = fiber.stack.last().unwrap().clone();
                     fiber.push(var);
                 },
-                Opcode::DumpStack => fiber.dump_stack("opcode"),
+                Opcode::DumpStack => {
+                    fiber.dump_stack(&format!("opcode [ip: {:#X}]", ip));
+                },
             };
         }
     }
 
-    fn call_method(&mut self, class: &Class, name: &str, args: u8, orig_class: &str) -> Option<String> {
+    fn call_method(&mut self, class: &Class, name: &str, args: u8, orig_class: &str) -> Option<Rc<str>> {
         if let Some(func) = class.functions.get(name) {
             return self.call(func, args);
         }
@@ -967,22 +1026,22 @@ impl Vm {
 
         if let Some(supertype_name) = &class.supertype {
             let Some(supertype) = self.variables.get(supertype_name) else {
-                return Some(format!("'{}' not found.", supertype_name));
+                return Some(format!("'{}' not found.", supertype_name).into());
             };
             let Value::Class(supertype_class) = supertype else {
-                return Some(format!("'{}' is not a class.", supertype_name));
+                return Some(format!("'{}' is not a class.", supertype_name).into());
             };
 
             let supertype_class = supertype_class.clone();
             return self.call_method(&supertype_class.borrow(), name, args, orig_class);
         }
 
-        Some(format!("'{}' doesn't have function named '{}'.", orig_class, name))
+        Some(format!("'{}' doesn't have function named '{}'.", orig_class, name).into())
     }
 
-    fn call(&mut self, func: &Function, args: u8) -> Option<String> {
+    fn call(&mut self, func: &Function, args: u8) -> Option<Rc<str>> {
         if args != func.arity {
-            return Some(format!("{} call: {} vs {}", func.name, func.arity, args));
+            return Some(format!("{} call: {} vs {}", func.name, func.arity, args).into());
         }
 
         let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
@@ -991,9 +1050,9 @@ impl Vm {
         None
     }
 
-    fn call_native(&mut self, func: &NativeFunction, args: u8) -> Option<String> {
+    fn call_native(&mut self, func: &NativeFunction, args: u8) -> Option<Rc<str>> {
         if args != func.arity {
-            return Some(format!("{} call: {} vs {}", func.name, func.arity, args));
+            return Some(format!("{} call: {} vs {}", func.name, func.arity, args).into());
         }
 
         (func.code)(self);
@@ -1031,26 +1090,30 @@ fn main() {
     };
 
     let test_class = test_class.clone();
+    vm.fibers.last_mut().unwrap().borrow_mut().push(Value::Class(test_class.clone()));
     vm.call_method(&test_class.borrow(), "main", 0, &test_class.borrow().name);
     vm.run();
 }
 
-fn read_string(f: &mut File) -> String {
+fn read_string(f: &mut File) -> Rc<str> {
     let size = f.read_u16::<LittleEndian>().unwrap() as usize;
     if size > 0 {
         let mut buf = vec![0u8; size];
         f.read(&mut buf).unwrap();
 
-        String::from_utf8(buf).unwrap()
+        String::from_utf8(buf).unwrap().into()
     } else {
-        String::new()
+        String::new().into()
     }
 }
 
 fn load_builtins(vm: &mut Vm) {
     load_system(vm);
+    load_sequence(vm);
+    load_bool(vm);
     load_string(vm);
     load_list(vm);
+    load_fn(vm);
     load_fiber(vm);
 }
 
@@ -1065,7 +1128,7 @@ macro_rules! generate_nl_writer {
 macro_rules! generate_writer {
     ($nats:ident, $name:ident, $nl:tt, $args_count:literal) => {{
         let args_ph = if $args_count > 0 { format!("_{}", ",_".repeat($args_count - 1)) } else { "".to_string() };
-        let name_ph = format!("{}({args_ph})", stringify!($name));
+        let name_ph: Rc<str> = format!("{}({args_ph})", stringify!($name)).into();
 
         $nats.insert(name_ph.clone(), NativeFunction {
             name: name_ph.clone(),
@@ -1075,15 +1138,7 @@ macro_rules! generate_writer {
                 let base = fiber.stack.len() - $args_count;
                 for i in 0..$args_count {
                     let a = fiber.stack.get(base + i).unwrap();
-                    match a {
-                        Value::Integer(i) => print!("{i}"),
-                        Value::Float(f) => print!("{f}"),
-                        Value::Bool(b) => print!("{b}"),
-                        Value::String(s) => print!("{}", unescaper::unescape(s).unwrap()),
-                        Value::Null => print!("null"),
-                        Value::Object(o) => print!("<object '{}'>", o.borrow().class),
-                        _ => print!("<error: {:?}>", a),
-                    };
+                    print!("{a}");
                 }
 
                 generate_nl_writer!($nl);
@@ -1108,7 +1163,9 @@ fn load_system(vm: &mut Vm) {
             let top = fiber.stack.pop().unwrap();
 
             let Value::Class(class) = top else {
-                panic!("Can't call name on not a class.");
+                fiber.error = Some(format!("Can't call name on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
 
             fiber.pop();
@@ -1123,7 +1180,9 @@ fn load_system(vm: &mut Vm) {
             let top = fiber.stack.pop().unwrap();
             
             let Value::Class(class) = top else {
-                panic!("Can't call supertype on not a class.");
+                fiber.error = Some(format!("Can't call supertype on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
 
             fiber.pop();
@@ -1191,6 +1250,34 @@ fn load_system(vm: &mut Vm) {
     vm.variables.insert("System".into(), Value::Class(Rc::new(RefCell::new(system_class))));
 }
 
+fn load_bool(vm: &mut Vm) {
+    let mut nats = HashMap::new();
+    nats.insert("!".into(), NativeFunction {
+        name: "!".into(),
+        arity: 0,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.stack.pop().unwrap();
+            let Value::Bool(b) = top else {
+                fiber.error = Some(format!("Can't call ! on {:?}.", top).into());
+                fiber.push_null();
+                return;
+            };
+
+            fiber.stack.push(Value::Bool(!b));
+        },
+    });
+    let bool_class = Class {
+        name: "Bool".into(),
+        supertype: Some("Object".into()),
+        fields: HashMap::new(),
+        functions: HashMap::new(),
+        natives: nats,
+    };
+
+    vm.variables.insert("Bool".into(), Value::Class(Rc::new(RefCell::new(bool_class))));
+}
+
 fn load_string(vm: &mut Vm) {
     let mut nats = HashMap::new();
     nats.insert("count".into(), NativeFunction {
@@ -1200,7 +1287,9 @@ fn load_string(vm: &mut Vm) {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let top = fiber.stack.pop().unwrap();
             let Value::String(string) = top else {
-                panic!("Can't call String.count on {top}.");
+                fiber.error = Some(format!("Can't call String.count on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
 
             fiber.stack.push(Value::Integer(string.len() as i32));
@@ -1217,7 +1306,51 @@ fn load_string(vm: &mut Vm) {
     vm.variables.insert("String".into(), Value::Class(Rc::new(RefCell::new(string_class))));
 }
 
+fn load_sequence(vm: &mut Vm) {
+    let mut funcs = HashMap::new();
+
+    let mut code = Chunk::new();
+    code.code.push(Opcode::LoadLocalVar(0));
+    code.code.push(Opcode::LoadLocalVar(2));
+    code.code.push(Opcode::Call("iterate(_)".into(), 1));
+    code.code.push(Opcode::StoreLocalVar(2));
+    code.code.push(Opcode::Pop);
+    code.code.push(Opcode::LoadLocalVar(2));
+    code.code.push(Opcode::Not);
+    code.code.push(Opcode::JumpIf(7));
+    code.code.push(Opcode::LoadLocalVar(1));
+    code.code.push(Opcode::LoadLocalVar(0));
+    code.code.push(Opcode::LoadLocalVar(2));
+    code.code.push(Opcode::Call("iteratorValue(_)".into(), 1));
+    code.code.push(Opcode::Call("call(_)".into(), 1));
+    code.code.push(Opcode::Pop);
+    code.code.push(Opcode::Loop(13));
+    code.code.push(Opcode::Null);
+    code.code.push(Opcode::Return);
+
+    funcs.insert("each(_)".into(), Function {
+        name: "each(_)".into(),
+        arity: 1,
+        locals: 1,
+        code,
+    });
+
+    let nats = HashMap::new();
+
+    let sequence_class = Class {
+        name: "Sequence".into(),
+        supertype: Some("Object".into()),
+        fields: HashMap::new(),
+        functions: funcs,
+        natives: nats,
+    };
+
+    vm.variables.insert("Sequence".into(), Value::Class(Rc::new(RefCell::new(sequence_class))));
+}
+
 fn load_list(vm: &mut Vm) {
+    let funcs = HashMap::new();
+
     let mut nats = HashMap::new();
     nats.insert("new()".into(), NativeFunction {
         name: "new()".into(),
@@ -1228,8 +1361,9 @@ fn load_list(vm: &mut Vm) {
             fiber.stack.push(Value::List(Vec::new()));
         },
     });
-    nats.insert("push(_)".into(), NativeFunction {
-        name: "push(_)".into(),
+
+    nats.insert("add(_)".into(), NativeFunction {
+        name: "add(_)".into(),
         arity: 1,
         code: |vm| {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
@@ -1243,11 +1377,71 @@ fn load_list(vm: &mut Vm) {
                 _ => todo!(),
             };
 
-            fiber.stack.pop();
-            let var = fiber.stack.get(index).unwrap().clone();
-            fiber.stack.push(var);
+            // keep the list at the top of the stack
         },
     });
+
+    nats.insert("iterate(_)".into(), NativeFunction {
+        name: "iterate(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let arg = fiber.pop();
+            let list = fiber.pop();
+
+            let Value::List(list) = list else {
+                todo!();
+            };
+
+            let next = match arg {
+                Value::Null => 0,
+                Value::Integer(i) => i + 1,
+                _ => panic!("debug: {:?}", arg),
+            };
+
+            if next < 0 {
+                panic!("no negative iterator");
+            }
+
+            if (next as usize) < list.len() {
+                fiber.stack.push(Value::Integer(next));
+            } else {
+                fiber.push_bool(false);
+            }
+        },
+    });
+
+    nats.insert("iteratorValue(_)".into(), NativeFunction {
+        name: "iteratorValue(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let arg = fiber.pop();
+            let list = fiber.pop();
+
+            let Value::List(list) = list else {
+                todo!();
+            };
+
+            let Value::Integer(index) = arg else {
+                todo!();
+            };
+
+            if index < 0 {
+                panic!("no negative iterator");
+            }
+
+            let index = index as usize;
+
+            if index < list.len() {
+                let val = list[index].clone();
+                fiber.stack.push(val);
+            } else {
+                fiber.push_null();
+            }
+        },
+    });
+
     nats.insert("count".into(), NativeFunction {
         name: "count".into(),
         arity: 0,
@@ -1255,20 +1449,99 @@ fn load_list(vm: &mut Vm) {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let top = fiber.stack.pop().unwrap();
             let Value::List(list) = top else {
-                panic!("Can't call List.count on {top}.");
+                fiber.error = Some(format!("Can't call List.count on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
             fiber.stack.push(Value::Integer(list.len() as i32));
         },
     });
+
     let list_class = Class {
         name: "List".into(),
+        supertype: Some("Sequence".into()),
+        fields: HashMap::new(),
+        functions: funcs,
+        natives: nats,
+    };
+
+    vm.variables.insert("List".into(), Value::Class(Rc::new(RefCell::new(list_class))));
+}
+
+fn load_fn(vm: &mut Vm) {
+    let mut nats = HashMap::new();
+    nats.insert("new(_)".into(), NativeFunction {
+        name: "new(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.stack.last().unwrap();
+
+            match top {
+                Value::Closure(_) => {},
+                _ => {
+                    fiber.error = Some(format!("Fn.new(_) only accepts functions. Got {:?}", top).into());
+                    fiber.push_null();
+                    return;
+                },
+            };
+        },
+    });
+
+    nats.insert("call(_)".into(), NativeFunction {
+        name: "call(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.stack.pop().unwrap();
+
+            let function = match fiber.stack.pop().unwrap() {
+                Value::Closure(function) => function,
+                _ => {
+                    fiber.error = Some(format!("Wanted 'Fn', got {:?}.", top).into());
+                    fiber.push_null();
+                    return;
+                },
+            };
+
+            let len = fiber.stack.len();
+            fiber.push_null();
+            fiber.stack.push(top);
+            fiber.stackbase.push(len);
+            fiber.callstack.push(function);
+        },
+    });
+
+    nats.insert("call()".into(), NativeFunction {
+        name: "call()".into(),
+        arity: 0,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.stack.pop().unwrap();
+
+            let function = match top {
+                Value::Closure(function) => function,
+                _ => {
+                    fiber.error = Some(format!("Wanted 'Fn', got {:?}.", top).into());
+                    fiber.push_null();
+                    return;
+                },
+            };
+
+            let len = fiber.stack.len();
+            fiber.stackbase.push(len - 1);
+            fiber.callstack.push(function);
+        },
+    });
+
+    let fn_class = Class {
+        name: "Fn".into(),
         supertype: Some("Object".into()),
         fields: HashMap::new(),
         functions: HashMap::new(),
         natives: nats,
     };
-
-    vm.variables.insert("List".into(), Value::Class(Rc::new(RefCell::new(list_class))));
+    vm.variables.insert("Fn".into(), Value::Class(Rc::new(RefCell::new(fn_class))));
 }
 
 fn load_fiber(vm: &mut Vm) {
@@ -1280,11 +1553,14 @@ fn load_fiber(vm: &mut Vm) {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let top = fiber.stack.pop().unwrap();
             let Value::Closure(function) = top else {
-                panic!("Can't call Fiber.new(_) on {top}.");
+                fiber.error = Some(format!("Can't call Fiber.new(_) on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
             fiber.pop(); // pops "Fiber" class
 
             let mut new_fiber = Fiber::new();
+            new_fiber.push(Value::Closure(function.clone()));
             new_fiber.push_callframe(function.clone());
             fiber.push(Value::Fiber(Rc::new(RefCell::new(new_fiber))));
         },
@@ -1297,11 +1573,13 @@ fn load_fiber(vm: &mut Vm) {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let val = fiber.pop();
             let top = fiber.pop();
-            drop(fiber);
 
             let Value::Fiber(new_fiber) = top else {
-                panic!("{:?} => Fiber.call()", top);
+                fiber.error = Some(format!("Can't call Fiber.call(_) on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
+            drop(fiber);
 
             new_fiber.borrow_mut().push(val);
             vm.fibers.push(new_fiber);
@@ -1314,11 +1592,13 @@ fn load_fiber(vm: &mut Vm) {
         code: |vm| {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let top = fiber.pop();
-            drop(fiber);
 
             let Value::Fiber(new_fiber) = top else {
-                panic!("{:?} => Fiber.call()", top);
+                fiber.error = Some(format!("Can't call Fiber.call() on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
+            drop(fiber);
 
             new_fiber.borrow_mut().push_null();
             vm.fibers.push(new_fiber);
@@ -1332,11 +1612,13 @@ fn load_fiber(vm: &mut Vm) {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let val = fiber.pop();
             let top = fiber.pop();
-            drop(fiber);
 
             let Value::Fiber(new_fiber) = top else {
-                panic!("{:?} => Fiber.try()", top);
+                fiber.error = Some(format!("Can't call Fiber.try(_) on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
+            drop(fiber);
 
             new_fiber.borrow_mut().push(val);
             new_fiber.borrow_mut().trying = true;
@@ -1350,11 +1632,13 @@ fn load_fiber(vm: &mut Vm) {
         code: |vm| {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let top = fiber.pop();
-            drop(fiber);
 
             let Value::Fiber(new_fiber) = top else {
-                panic!("{:?} => Fiber.try()", top);
+                fiber.error = Some(format!("Can't call Fiber.try() on {:?}.", top).into());
+                fiber.push_null();
+                return;
             };
+            drop(fiber);
 
             new_fiber.borrow_mut().push_null();
             new_fiber.borrow_mut().trying = true;
@@ -1386,11 +1670,14 @@ fn load_fiber(vm: &mut Vm) {
             let top = fiber.pop();
             fiber.pop();
 
-            println!("aborting");
             match top {
                 Value::Null => {},
                 Value::String(s) => fiber.error = Some(s),
-                _ => panic!("Invalid value given to Fiber.abort(_). Null or a string. Got {:?}.", top),
+                _ => {
+                    fiber.error = Some(format!("Invalid value given to Fiber.abort(_). Null or a string. Got {:?}.", top).into());
+                    fiber.push_null();
+                    return;
+                }
             };
             
             fiber.push_null();
@@ -1404,7 +1691,7 @@ fn load_fiber(vm: &mut Vm) {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let top = fiber.pop();
             let Value::Fiber(new_fiber) = top else {
-                fiber.error = Some(format!("Fiber.isDone expects a fiber. Got {:?}.", top));
+                fiber.error = Some(format!("Fiber.isDone expects a fiber. Got {:?}.", top).into());
                 fiber.push_null();
                 return;
             };

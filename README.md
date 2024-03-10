@@ -152,7 +152,7 @@ Takes the next byte to know how many arguments are on the stack.
 
 Identical to `OP_JUMP` but jumps backwards.
 
-**Warning**: the offset is in `opcode` not in `byte`. (might change later?)
+**Warning**: the offset is in `opcode` not in `byte`.
 
 ### OP_LOAD_LOCAL_VAR (21)
 
@@ -181,20 +181,26 @@ Pops off the stack a variable and stores it in the field of that name in the obj
 
 ### OP_JUMP_IF (26)
 
-The next two bytes are a relative offset. Jumps if the top value of the stack is `true`.
+The next byte is a forwards offset to jump to.Jumps if the top value of the stack is `true`.
 
-**Warning**: the offset is in `opcode` not in `byte`. (might change later?)
+**Warning**: the offset is in `opcode` not in `byte`.
 
 ### OP_JUMP (27)
 
 The next byte is a forwards offset to jump to.
 
-**Warning**: the offset is in `opcode` not in `byte`. (might change later?)
+**Warning**: the offset is in `opcode` not in `byte`.
 
 ### OP_DUP (28)
 
 Duplicates the top value of the stack.
 
-### OP_DUMP_STACK (29)
+### OP_LOOP_IF (29)
+
+Identical to `OP_JUMP_IF` but jumps backwards.
+
+**Warning**: the offset is in `opcode` not in `byte`.
+
+### OP_DUMP_STACK (255)
 
 Dump the current stack.
