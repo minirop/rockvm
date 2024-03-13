@@ -261,7 +261,7 @@ fn load_list(vm: &mut Vm) {
         code: |vm| {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             fiber.stack.pop();
-            fiber.stack.push(Value::List(Vec::new()));
+            fiber.stack.push(Value::List(Rc::new(RefCell::new(Vec::new()))));
         },
     });
 
@@ -274,8 +274,8 @@ fn load_list(vm: &mut Vm) {
             let arg = fiber.stack.pop().unwrap();
 
             match fiber.stack.get_mut(index).unwrap() {
-                Value::List(ref mut list) => {
-                    (*list).push(arg);
+                Value::List(list) => {
+                    list.borrow_mut().push(arg);
                 },
                 _ => todo!(),
             };
@@ -306,7 +306,7 @@ fn load_list(vm: &mut Vm) {
                 panic!("no negative iterator");
             }
 
-            if (next as usize) < list.len() {
+            if (next as usize) < list.borrow().len() {
                 fiber.stack.push(Value::Integer(next));
             } else {
                 fiber.push_bool(false);
@@ -336,8 +336,71 @@ fn load_list(vm: &mut Vm) {
 
             let index = index as usize;
 
-            if index < list.len() {
-                let val = list[index].clone();
+            if index < list.borrow().len() {
+                let val = list.borrow_mut()[index].clone();
+                fiber.stack.push(val);
+            } else {
+                fiber.push_null();
+            }
+        },
+    });
+
+    nats.insert("[_]".into(), NativeFunction {
+        name: "[_]".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let arg = fiber.pop();
+            let list = fiber.pop();
+
+            let Value::List(list) = list else {
+                todo!();
+            };
+
+            let Value::Integer(index) = arg else {
+                todo!();
+            };
+
+            if index < 0 {
+                panic!("no negative iterator");
+            }
+
+            let index = index as usize;
+
+            if index < list.borrow().len() {
+                let val = list.borrow()[index].clone();
+                fiber.stack.push(val);
+            } else {
+                fiber.push_null();
+            }
+        },
+    });
+
+    nats.insert("[_]=(_)".into(), NativeFunction {
+        name: "[_]=(_)".into(),
+        arity: 2,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let val = fiber.pop();
+            let index = fiber.pop();
+            let list = fiber.pop();
+
+            let Value::List(list) = list else {
+                todo!();
+            };
+
+            let Value::Integer(index) = index else {
+                todo!();
+            };
+
+            if index < 0 {
+                panic!("no negative iterator");
+            }
+
+            let index = index as usize;
+
+            if index < list.borrow().len() {
+                list.borrow_mut()[index] = val.clone();
                 fiber.stack.push(val);
             } else {
                 fiber.push_null();
@@ -356,7 +419,7 @@ fn load_list(vm: &mut Vm) {
                 fiber.push_null();
                 return;
             };
-            fiber.stack.push(Value::Integer(list.len() as i32));
+            fiber.stack.push(Value::Integer(list.borrow().len() as i32));
         },
     });
 

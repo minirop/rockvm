@@ -36,7 +36,7 @@ pub enum Value {
     String(Rc<str>),
     Class(Rc<RefCell<Class>>),
     Object(Rc<RefCell<Object>>),
-    List(Vec<Value>),
+    List(Rc<RefCell<Vec<Value>>>),
     Closure(Function),
     Fiber(Rc<RefCell<Fiber>>),
 }
@@ -209,9 +209,9 @@ impl fmt::Display for Value {
             Value::Object(o) => write!(f, "<object of type '{}'>", o.borrow().class),
             Value::List(list) => {
                 write!(f, "[").unwrap();
-                for i in 0..list.len() {
+                for i in 0..list.borrow().len() {
                     if i > 0 { write!(f, ", ").unwrap(); }
-                    write!(f, "{}", list[i]).unwrap();
+                    write!(f, "{}", list.borrow()[i]).unwrap();
                 }
                 write!(f, "]")
             },
