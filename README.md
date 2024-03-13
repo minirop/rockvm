@@ -76,6 +76,13 @@ Pops the current call frame.
 
 Pushes a constant on the stack.
 
+The next bytes are as follow:
+`null`: `1`.
+`bool`: `2` then `0` for `false` or `1` (or any non `0`) for `true`.
+`integer`: `3` then 4 bytes containing the integer in little-endian.
+`float`: `4` then 4 bytes containing the float in little-endian.
+`string`: `5` then 2 bytes containing the index in the `strings` array.
+
 ### OP_NEGATE (3)
 
 Negates the top value on the stack (int or float only).
@@ -83,6 +90,8 @@ Negates the top value on the stack (int or float only).
 ### OP_ADD (4)
 
 Pops 2 values from the stack and pushes their sum.
+
+If one of the value is a string, it converts the other to a string and concatenates them.
 
 ### OP_SUB (5)
 

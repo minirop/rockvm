@@ -40,6 +40,7 @@ enum Opcode {
     Loop(u8),
     LoopIf(u8),
     Dup,
+    ImportModule(Rc<str>),
 
     DumpStack,
 }
@@ -73,6 +74,7 @@ const OP_JUMP_IF: u8 = 26;
 const OP_JUMP: u8 = 27;
 const OP_DUP: u8 = 28;
 const OP_LOOP_IF: u8 = 29;
+const OP_IMPORT_MODULE: u8 = 30;
 const OP_DUMP_STACK: u8 = 255;
 
 #[derive(Debug, Clone)]
@@ -109,7 +111,6 @@ const VAL_BOOL: u8 = 2;
 const VAL_INTEGER: u8 = 3;
 const VAL_FLOAT: u8 = 4;
 const VAL_STRING: u8 = 5;
-const VAL_CLASS: u8 = 6;
 
 impl Add for Value {
     type Output = Self;
@@ -120,6 +121,7 @@ impl Add for Value {
                 match other {
                     Value::Integer(i2) => Value::Integer(i + i2),
                     Value::Float(f) => Value::Float(i as f32 + f),
+                    Value::String(string) => Value::String(format!("{i}{string}").into()),
                     _ => panic!("{} + {}", self, other),
                 }
             },
@@ -127,18 +129,17 @@ impl Add for Value {
                 match other {
                     Value::Integer(i) => Value::Float(f + i as f32),
                     Value::Float(f2) => Value::Float(f + f2),
+                    Value::String(string) => Value::String(format!("{f}{string}").into()),
                     _ => panic!("{} + {}", self, other),
                 }
             },
             Value::String(string) => {
-                match other {
-                    Value::String(string2) => Value::String(format!("{}{}", string, string2).into()),
-                    Value::Integer(i) => Value::String(format!("{}{}", string, i).into()),
-                    Value::Float(f) => Value::String(format!("{}{}", string, f).into()),
-                    _ => panic!("'{}' + '{}'", string, other),
-                }
+                Value::String(format!("{string}{other}").into())
             },
-            _ => panic!("{} + {}", self, other),
+            _ => match other {
+                Value::String(string) => Value::String(format!("{self}{string}").into()),
+                _ => panic!("{} + {}", self, other)
+            },
         }
     }
 }
@@ -572,7 +573,6 @@ impl Vm {
                         let int = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
                         Value::String(self.strings[int].clone())
                     },
-                    VAL_CLASS => panic!("class not handled."),
                     _ => panic!("Unknown value type {t}."),
                 };
                 Opcode::Constant(val)
@@ -657,6 +657,11 @@ impl Vm {
                 *i += 1;
                 let offset = (&buf[(*i - 1)..*i]).read_u8()?;
                 Opcode::LoopIf(offset)
+            },
+            OP_IMPORT_MODULE => {
+                *i += 2;
+                let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
+                Opcode::ImportModule(self.strings[idx].clone())
             },
             OP_DUP => Opcode::Dup,
             _ => {
@@ -976,7 +981,7 @@ impl Vm {
                         Value::Bool(b) => b,
                         Value::Integer(i) => i != 0,
                         _ => {
-                            fiber.error = Some("false".into());
+                            fiber.error = Some("JumpIf: false".into());
                             continue 'mainloop;
                         },
                     };
@@ -993,7 +998,7 @@ impl Vm {
                         Value::Bool(b) => b,
                         Value::Integer(i) => i != 0,
                         _ => {
-                            fiber.error = Some("false".into());
+                            fiber.error = Some("LoopIf: false".into());
                             continue 'mainloop;
                         },
                     };
@@ -1007,6 +1012,9 @@ impl Vm {
                 Opcode::Dup => {
                     let var = fiber.stack.last().unwrap().clone();
                     fiber.push(var);
+                },
+                Opcode::ImportModule(name) => {
+                    panic!("IMPORT {name}", );
                 },
                 Opcode::DumpStack => {
                     fiber.dump_stack(&format!("opcode [ip: {:#X}]", ip));
