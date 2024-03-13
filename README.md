@@ -76,12 +76,12 @@ Pops the current call frame.
 
 Pushes a constant on the stack.
 
-The next bytes are as follow:
-`null`: `1`.
-`bool`: `2` then `0` for `false` or `1` (or any non `0`) for `true`.
-`integer`: `3` then 4 bytes containing the integer in little-endian.
-`float`: `4` then 4 bytes containing the float in little-endian.
-`string`: `5` then 2 bytes containing the index in the `strings` array.
+The next byte tells the type of constant, some have following bytes for the actual data:\
+`null`: `1`.\
+`bool`: `2` then `0` for `false` or `1` (or any non `0`) for `true`.\
+`integer`: `3` then 4 bytes containing the integer in little-endian.\
+`float`: `4` then 4 bytes containing the float in little-endian.\
+`string`: `5` then 2 bytes containing an index in the `strings` array.
 
 ### OP_NEGATE (3)
 
