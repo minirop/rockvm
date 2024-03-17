@@ -164,7 +164,7 @@ impl Fiber {
     }
 
     fn push_bool(&mut self, value: bool) {
-        self.stack.push(Value::Bool(value));
+        self.push(Value::Bool(value));
     }
 
     fn dump_stack(&self, name: &str) {
@@ -633,7 +633,15 @@ impl Vm {
                             };
 
                             c.clone()
-                        }
+                        },
+                        Value::Pointer(p) => {
+                            let Some(Value::Class(c)) = self.variables.get(&p.borrow().class) else {
+                                fiber.error = Some(format!("Pointer of unknown class: {}", p.borrow().class).into());
+                                continue;
+                            };
+
+                            c.clone()
+                        },
                         _ => {
                             fiber.error = Some(format!("Calling '{name}' with {:?}.", top).into());
                             continue;

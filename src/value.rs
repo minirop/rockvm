@@ -1,4 +1,4 @@
-
+use std::any::Any;
 use std::fmt;
 use std::cmp::Ordering;
 use std::ops::*;
@@ -27,6 +27,12 @@ pub struct Object {
     pub fields: HashMap<Rc<str>, Value>,
 }
 
+#[derive(Debug)]
+pub struct Pointer {
+    pub class: Rc<str>,
+    pub data: Box<dyn Any>,
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Null,
@@ -39,6 +45,7 @@ pub enum Value {
     List(Rc<RefCell<Vec<Value>>>),
     Closure(Function),
     Fiber(Rc<RefCell<Fiber>>),
+    Pointer(Rc<RefCell<Pointer>>),
 }
 
 impl Add for Value {
@@ -217,6 +224,7 @@ impl fmt::Display for Value {
             },
             Value::Closure(_) => write!(f, "<closure>"),
             Value::Fiber(_) => write!(f, "<fiber>"),
+            Value::Pointer(p) => write!(f, "<Pointer of type '{}'>", p.borrow().class),
         }
     }
 }

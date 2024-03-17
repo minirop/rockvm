@@ -1,3 +1,6 @@
+use std::io::Read;
+use crate::Pointer;
+use std::fs::File;
 use crate::Function;
 use crate::Fiber;
 use crate::Chunk;
@@ -18,6 +21,7 @@ pub fn register(vm: &mut Vm) {
     load_list(vm);
     load_fn(vm);
     load_fiber(vm);
+    load_file(vm);
 }
 
 macro_rules! generate_nl_writer {
@@ -678,4 +682,60 @@ fn load_fiber(vm: &mut Vm) {
         natives: nats,
     };
     vm.variables.insert("Fiber".into(), Value::Class(Rc::new(RefCell::new(fiber_class))));
+}
+
+fn load_file(vm: &mut Vm) {
+    let mut nats = HashMap::new();
+    nats.insert("new(_)".into(), NativeFunction {
+        name: "new(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.stack.pop().unwrap();
+            let Value::String(filename) = top else {
+                fiber.error = Some(format!("File.new(_) expects a string. Got {:?}.", top).into());
+                fiber.push_null();
+                return;
+            };
+            
+            fiber.pop(); // pops "File" class
+
+            let file = File::open(&*filename).unwrap();
+            fiber.stack.push(Value::Pointer(Rc::new(RefCell::new(Pointer {
+                class: "File".into(),
+                data: Box::new(file),
+            }))));
+        },
+    });
+    nats.insert("read()".into(), NativeFunction {
+        name: "read()".into(),
+        arity: 0,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.stack.pop().unwrap();
+            let Value::Pointer(ptr) = top else {
+                fiber.error = Some(format!("File.read() expects a pointer. Got {:?}.", top).into());
+                fiber.push_null();
+                return;
+            };
+
+            if let Some(mut file) = ptr.borrow().data.downcast_ref::<File>() {
+                let mut buffer = String::new();
+                file.read_to_string(&mut buffer).unwrap();
+                fiber.push(Value::String(Rc::from(buffer)));
+            } else {
+                fiber.error = Some("File.read() expects a 'File'.".into());
+                fiber.push_null();
+            };
+        },
+    });
+
+    let file_class = Class {
+        name: "File".into(),
+        supertype: Some("Object".into()),
+        fields: HashMap::new(),
+        functions: HashMap::new(),
+        natives: nats,
+    };
+    vm.variables.insert("File".into(), Value::Class(Rc::new(RefCell::new(file_class))));
 }
