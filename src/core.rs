@@ -14,6 +14,7 @@ use crate::Value;
 use crate::Vm;
 
 pub fn register(vm: &mut Vm) {
+    load_object(vm);
     load_system(vm);
     load_sequence(vm);
     load_bool(vm);
@@ -60,8 +61,89 @@ macro_rules! generate_writer {
     }}
 }
 
-fn load_system(vm: &mut Vm) {
+fn load_object(vm: &mut Vm) {
     let mut obj_nats = HashMap::new();
+    obj_nats.insert("type".into(), NativeFunction {
+        name: "type".into(),
+        arity: 0,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let top = fiber.pop();
+
+            let class = match top {
+                Value::Object(o) => {
+                    let Some(Value::Class(c)) = vm.variables.get(&o.borrow().class) else {
+                        fiber.error = Some(format!("Object of unknown class: {}", o.borrow().class).into());
+                        fiber.push_null();
+                        return;
+                    };
+
+                    c.clone()
+                },
+                Value::String(_) => {
+                    let Some(Value::Class(c)) = vm.variables.get("String") else {
+                        fiber.error = Some("Can't find class 'String'.".into());
+                        fiber.push_null();
+                        return;
+                    };
+
+                    c.clone()
+                },
+                Value::List(_) => {
+                    let Some(Value::Class(c)) = vm.variables.get("List") else {
+                        fiber.error = Some("Can't find class 'List'.".into());
+                        fiber.push_null();
+                        return;
+                    };
+
+                    c.clone()
+                },
+                Value::Fiber(_) => {
+                    let Some(Value::Class(c)) = vm.variables.get("Fiber") else {
+                        fiber.error = Some("Can't find class 'Fiber'.".into());
+                        fiber.push_null();
+                        return;
+                    };
+
+                    c.clone()
+                },
+                Value::Bool(_) => {
+                    let Some(Value::Class(c)) = vm.variables.get("Bool") else {
+                        fiber.error = Some("Can't find class 'Bool'.".into());
+                        fiber.push_null();
+                        return;
+                    };
+
+                    c.clone()
+                },
+                Value::Closure(_) => {
+                    let Some(Value::Class(c)) = vm.variables.get("Fn") else {
+                        fiber.error = Some("Can't find class 'Fn'.".into());
+                        fiber.push_null();
+                        return;
+                    };
+
+                    c.clone()
+                },
+                Value::Pointer(p) => {
+                    let Some(Value::Class(c)) = vm.variables.get(&p.borrow().class) else {
+                        fiber.error = Some(format!("Pointer of unknown class: {}", p.borrow().class).into());
+                        fiber.push_null();
+                        return;
+                    };
+
+                    c.clone()
+                },
+                _ => {
+                    fiber.error = Some(format!("Can't call 'type' on {:?}.", top).into());
+                    fiber.push_null();
+                    return;
+                },
+            };
+
+            fiber.push(Value::Class(class));
+        },
+    });
     obj_nats.insert("name".into(), NativeFunction {
         name: "name".into(),
         arity: 0,
@@ -75,7 +157,6 @@ fn load_system(vm: &mut Vm) {
                 return;
             };
 
-            fiber.pop();
             fiber.stack.push(Value::String(class.borrow().name.clone()));
         },
     });
@@ -92,7 +173,6 @@ fn load_system(vm: &mut Vm) {
                 return;
             };
 
-            fiber.pop();
             if let Some(supertype) = &class.borrow().supertype {
                 fiber.stack.push(Value::String(supertype.clone()));
             } else {
@@ -100,6 +180,7 @@ fn load_system(vm: &mut Vm) {
             };
         },
     });
+
     let object_class = Class {
         name: "Object".into(),
         supertype: None,
@@ -108,6 +189,10 @@ fn load_system(vm: &mut Vm) {
         natives: obj_nats,
     };
 
+    vm.variables.insert("Object".into(), Value::Class(Rc::new(RefCell::new(object_class))));
+}
+
+fn load_system(vm: &mut Vm) {
     let mut nats = HashMap::new();
 
     generate_writer!(nats, print, true, 0);
@@ -153,7 +238,6 @@ fn load_system(vm: &mut Vm) {
         natives: nats,
     };
 
-    vm.variables.insert("Object".into(), Value::Class(Rc::new(RefCell::new(object_class))));
     vm.variables.insert("System".into(), Value::Class(Rc::new(RefCell::new(system_class))));
 }
 
@@ -756,7 +840,7 @@ fn load_file(vm: &mut Vm) {
                 }
                 let new_str = String::from_utf8(buffer);
                 match new_str {
-                    Ok(ns) => fiber.push(Value::String(Rc::from(ns))),
+                    Ok(ns) => fiber.push(Value::String(Rc::from(ns.trim_matches(char::from(0)).to_string()))),
                     Err(e) => {
                         fiber.error = Some(format!("{:?}", e).into());
                         fiber.push_null();
