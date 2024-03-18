@@ -644,7 +644,7 @@ fn load_fiber(vm: &mut Vm) {
                 Value::Null => {},
                 Value::String(s) => fiber.error = Some(s),
                 _ => {
-                    fiber.error = Some(format!("Invalid value given to Fiber.abort(_). Null or a string. Got {:?}.", top).into());
+                    fiber.error = Some(format!("Invalid value given to Fiber.abort(_). Expecting 'null' or a string. Got {:?}.", top).into());
                     fiber.push_null();
                     return;
                 }
@@ -714,7 +714,7 @@ fn load_file(vm: &mut Vm) {
             let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
             let top = fiber.stack.pop().unwrap();
             let Value::Pointer(ptr) = top else {
-                fiber.error = Some(format!("File.read() expects a pointer. Got {:?}.", top).into());
+                fiber.error = Some(format!("File.read() must be called on a pointer. Got {:?}.", top).into());
                 fiber.push_null();
                 return;
             };
@@ -724,7 +724,46 @@ fn load_file(vm: &mut Vm) {
                 file.read_to_string(&mut buffer).unwrap();
                 fiber.push(Value::String(Rc::from(buffer)));
             } else {
-                fiber.error = Some("File.read() expects a 'File'.".into());
+                fiber.error = Some("File.read() expects a 'File' pointer.".into());
+                fiber.push_null();
+            };
+        },
+    });
+    nats.insert("read(_)".into(), NativeFunction {
+        name: "read(_)".into(),
+        arity: 1,
+        code: |vm| {
+            let mut fiber = vm.fibers.last_mut().unwrap().borrow_mut();
+            let count = fiber.stack.pop().unwrap();
+            let Value::Integer(size) = count else {
+                fiber.error = Some(format!("File.read(_) expects a int. Got {:?}.", count).into());
+                fiber.push_null();
+                return;
+            };
+            let top = fiber.stack.pop().unwrap();
+            let Value::Pointer(ptr) = top else {
+                fiber.error = Some(format!("File.read(_) must be called on a pointer. Got {:?}.", top).into());
+                fiber.push_null();
+                return;
+            };
+
+            if let Some(mut file) = ptr.borrow().data.downcast_ref::<File>() {
+                let mut buffer = vec![0u8; size as usize];
+                if let Err(e) = file.read(&mut buffer) {
+                    fiber.error = Some(format!("{:?}", e).into());
+                    fiber.push_null();
+                    return;
+                }
+                let new_str = String::from_utf8(buffer);
+                match new_str {
+                    Ok(ns) => fiber.push(Value::String(Rc::from(ns))),
+                    Err(e) => {
+                        fiber.error = Some(format!("{:?}", e).into());
+                        fiber.push_null();
+                    }
+                };
+            } else {
+                fiber.error = Some("File.read(_) expects a 'File' pointer.".into());
                 fiber.push_null();
             };
         },

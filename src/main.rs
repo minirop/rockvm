@@ -651,7 +651,9 @@ impl Vm {
                     drop(fiber);
                     let err = self.call_method(&class.borrow(), &name, args, &class.borrow().name);
                     let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
-                    fiber.error = err;
+                    if fiber.error.is_none() && err.is_some() {
+                        fiber.error = err;
+                    }
                 },
                 Opcode::LoadLocalVar(index) => {
                     let idx = stackbase + index as usize;
