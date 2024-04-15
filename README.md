@@ -210,6 +210,14 @@ Identical to `OP_JUMP_IF` but jumps backwards.
 
 **Warning**: the offset is in `opcode` not in `byte`.
 
+### OP_IMPORT_MODULE (30)
+
+Load another file and import its symbols. *Unimplemented*
+
+### OP_SUPER (31)
+
+Identical to `OP_CALL` except it calls the same named method in the parent class.
+
 ### OP_DUMP_STACK (255)
 
 Dump the current stack.
