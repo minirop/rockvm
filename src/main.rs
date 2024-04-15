@@ -38,6 +38,7 @@ enum Opcode {
     LoadModuleVar(Rc<str>),
     StoreModuleVar(Rc<str>),
     Call(Rc<str>, u8),
+    Super(Rc<str>, u8),
     LoadLocalVar(usize),
     StoreLocalVar(usize),
     AllocateVar(Rc<str>),
@@ -83,6 +84,7 @@ const OP_JUMP: u8 = 27;
 const OP_DUP: u8 = 28;
 const OP_LOOP_IF: u8 = 29;
 const OP_IMPORT_MODULE: u8 = 30;
+const OP_SUPER: u8 = 31;
 const OP_DUMP_STACK: u8 = 255;
 
 #[derive(Debug, Clone)]
@@ -444,6 +446,13 @@ impl Vm {
                 Opcode::ImportModule(self.strings[idx].clone())
             },
             OP_DUP => Opcode::Dup,
+            OP_SUPER => {
+                *i += 2;
+                let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
+                *i += 1;
+                let args = buf[*i - 1];
+                Opcode::Super(self.strings[idx].clone(), args)
+            },
             _ => {
                 println!("{:?}", buf);
                 panic!("{name}: Unknown byte {:#X} at index {}", c, *i - 1);
@@ -655,6 +664,43 @@ impl Vm {
                         fiber.error = err;
                     }
                 },
+                Opcode::Super(name, args) => {
+                    let name = name.clone();
+                    let index = fiber.stack.len() - (args as usize) - 1;
+                    let top = fiber.stack[index].clone();
+
+                    let class = match top {
+                        Value::Object(o) => {
+                            let Some(Value::Class(c)) = self.variables.get(&o.borrow().class) else {
+                                fiber.error = Some(format!("Object of unknown class: {}", o.borrow().class).into());
+                                continue;
+                            };
+
+                            let Some(supertype) = &c.borrow().supertype else {
+                                fiber.error = Some(format!("Class '{}' doesn't have a parent class.", c.borrow().name).into());
+                                continue;
+                            };
+
+                            let Some(Value::Class(pc)) = self.variables.get(supertype) else {
+                                fiber.error = Some(format!("Object of unknown class: {}", supertype).into());
+                                continue;
+                            };
+
+                            pc.clone()
+                        },
+                        _ => {
+                            fiber.error = Some(format!("Calling '{name}' in parent class with {:?}.", top).into());
+                            continue;
+                        },
+                    };
+
+                    drop(fiber);
+                    let err = self.call_method(&class.borrow(), &name, args, &class.borrow().name);
+                    let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
+                    if fiber.error.is_none() && err.is_some() {
+                        fiber.error = err;
+                    }
+                },
                 Opcode::LoadLocalVar(index) => {
                     let idx = stackbase + index as usize;
                     let var = fiber.stack[idx].clone();
@@ -766,7 +812,7 @@ impl Vm {
                     func.code.ip += offset as usize;
                 },
                 Opcode::JumpIf(offset) => {
-                    let var = fiber.stack.pop().unwrap();
+                    let var = fiber.pop();
                     let cond = match var {
                         Value::Bool(b) => b,
                         Value::Integer(i) => i != 0,
@@ -783,7 +829,7 @@ impl Vm {
                     }
                 },
                 Opcode::LoopIf(offset) => {
-                    let var = fiber.stack.pop().unwrap();
+                    let var = fiber.pop();
                     let cond = match var {
                         Value::Bool(b) => b,
                         Value::Integer(i) => i != 0,
