@@ -1,16 +1,27 @@
-class String extends Object:
-	function count: 0x561905bfbfa0
-
-class List extends Object:
-	function new(): 0x561905bfc220
-	function count: 0x561905bfcc20
-	function push(_): 0x561905bfc020
+class List extends Sequence:
+	function new(): 0x63faf2e2dd60
+	function [_]=(_): 0x63faf2e311e0
+	function add(_): 0x63faf2e28b90
+	function count: 0x63faf2e30220
+	function iteratorValue(_): 0x63faf2e2ff10
+	function [_]: 0x63faf2e355e0
+	function iterate(_): 0x63faf2e30650
 
 class Object:
-	function name: 0x561905bfc850
-	function supertype: 0x561905bfc440
+	function name: 0x63faf2e32c20
+	function type: 0x63faf2e35920
+	function supertype: 0x63faf2e37080
 
 class $self extends Object:
+	function main:
+		LoadModuleVar("System")
+		LoadModuleVar("$self")
+		Constant(Integer(28))
+		Call("fib(_)", 1)
+		Call("print(_)", 1)
+		Pop
+		Null
+		Return
 	function fib(_):
 		LoadLocalVar(1)
 		Constant(Integer(3))
@@ -36,46 +47,84 @@ class $self extends Object:
 		Jump(1)
 		Constant(Integer(0))
 		Return
-	function main:
-		LoadModuleVar("System")
-		LoadModuleVar("$self")
-		Constant(Integer(28))
-		Call("fib(_)", 1)
-		Call("print(_)", 1)
+
+class Fiber extends Object:
+	function new(_): 0x63faf2e344d0
+	function try(_): 0x63faf2e2d810
+	function call(_): 0x63faf2e33fb0
+	function try(): 0x63faf2e2d3a0
+	function yield(_): 0x63faf2e25750
+	function call(): 0x63faf2e2cf40
+	function abort(_): 0x63faf2e2fa80
+	function isDone: 0x63faf2e2ae50
+
+class String extends Object:
+	function count: 0x63faf2e267d0
+
+class Fn extends Object:
+	function new(_): 0x63faf2e2c590
+	function call(): 0x63faf2e320a0
+	function call(_): 0x63faf2e20d00
+
+class Bool extends Object:
+	function !: 0x63faf2e29af0
+
+class Sequence extends Object:
+	function each(_):
+		LoadLocalVar(0)
+		LoadLocalVar(2)
+		Call("iterate(_)", 1)
+		StoreLocalVar(2)
 		Pop
+		LoadLocalVar(2)
+		Not
+		JumpIf(7)
+		LoadLocalVar(1)
+		LoadLocalVar(0)
+		LoadLocalVar(2)
+		Call("iteratorValue(_)", 1)
+		Call("call(_)", 1)
+		Pop
+		Loop(13)
+		Null
 		Return
 
 class System extends Object:
-	function print(_,_,_,_): 0x561905bfc260
-	function print(_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfbf60
-	function print(_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc190
-	function write(_): 0x561905bfc700
-	function write(_,_,_,_,_): 0x561905bfc2a0
-	function print(_,_,_,_,_,_,_,_,_): 0x561905bfc740
-	function write(_,_,_,_,_,_,_,_,_): 0x561905bfc480
-	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfcc60
-	function write(_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc400
-	function print(_,_): 0x561905bfc620
-	function print(_): 0x561905bfc150
-	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfca40
-	function write(_,_,_): 0x561905bfc980
-	function print(_,_,_,_,_,_): 0x561905bfc2e0
-	function write(_,_,_,_): 0x561905bfc550
-	function print(): 0x561905bfcae0
-	function write(_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfcba0
-	function write(_,_,_,_,_,_,_,_): 0x561905bfc940
-	function write(_,_,_,_,_,_): 0x561905bfc810
-	function write(_,_,_,_,_,_,_,_,_,_): 0x561905bfc060
-	function print(_,_,_): 0x561905bfca00
-	function print(_,_,_,_,_): 0x561905bfc1d0
-	function print(_,_,_,_,_,_,_,_): 0x561905bfcb20
-	function print(_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc7d0
-	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfcbe0
-	function write(_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfbe80
-	function print(_,_,_,_,_,_,_,_,_,_): 0x561905bfbfe0
-	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc590
-	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc6c0
-	function write(_,_,_,_,_,_,_): 0x561905bfc9c0
-	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x561905bfc320
-	function print(_,_,_,_,_,_,_): 0x561905bfcb60
-	function write(_,_): 0x561905bfbe40
+	function print(_,_): 0x63faf2e297e0
+	function print(_,_,_,_,_,_,_,_,_,_): 0x63faf2e21320
+	function write(_,_): 0x63faf2e37580
+	function write(_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e26b70
+	function write(_,_,_,_,_): 0x63faf2e25280
+	function write(_,_,_,_,_,_,_,_): 0x63faf2e31660
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e37860
+	function write(_,_,_,_,_,_,_,_,_,_): 0x63faf2e29e30
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e2eed0
+	function write(_,_,_,_,_,_,_): 0x63faf2e32610
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e28d70
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e2e4d0
+	function print(_,_,_,_,_,_): 0x63faf2e2df30
+	function print(_,_,_,_): 0x63faf2e21f00
+	function write(_,_,_,_,_,_): 0x63faf2e35070
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e2ba80
+	function print(_,_,_,_,_,_,_,_,_): 0x63faf2e33830
+	function write(_,_,_,_,_,_,_,_,_): 0x63faf2e24b30
+	function write(_,_,_): 0x63faf2e31d10
+	function print(_,_,_,_,_): 0x63faf2e27400
+	function write(_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e22e00
+	function print(_,_,_,_,_,_,_): 0x63faf2e2b1e0
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e22360
+	function write(_,_,_,_): 0x63faf2e237d0
+	function print(_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e30920
+	function print(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e25bf0
+	function print(_): 0x63faf2e2b820
+	function write(_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e27900
+	function print(_,_,_): 0x63faf2e21b40
+	function write(_): 0x63faf2e259c0
+	function print(_,_,_,_,_,_,_,_): 0x63faf2e2c860
+	function print(): 0x63faf2e2ace0
+	function print(_,_,_,_,_,_,_,_,_,_,_,_): 0x63faf2e28230
+
+class File extends Object:
+	function read(_): 0x63faf2e23c00
+	function new(_): 0x63faf2e2a620
+	function read(): 0x63faf2e330c0

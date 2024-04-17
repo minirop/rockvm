@@ -49,7 +49,7 @@ enum Opcode {
     Loop(u8),
     LoopIf(u8),
     Dup,
-    ImportModule(Rc<str>),
+    ImportModule(Rc<str>, HashMap<Rc<str>, Rc<str>>),
 
     DumpStack,
 }
@@ -183,10 +183,6 @@ impl Fiber {
         }
         println!("=====  END  {name} =====");
     }
-}
-
-enum InterpretResult {
-    Ok,
 }
 
 #[derive(Debug, Clone)]
@@ -443,7 +439,21 @@ impl Vm {
             OP_IMPORT_MODULE => {
                 *i += 2;
                 let idx = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
-                Opcode::ImportModule(self.strings[idx].clone())
+
+                let mut imports = HashMap::new();
+
+                *i += 2;
+                let count = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
+                for _ in 0..count {
+                    *i += 2;
+                    let key = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
+                    *i += 2;
+                    let val = (&buf[(*i - 2)..*i]).read_u16::<LittleEndian>()? as usize;
+
+                    imports.insert(self.strings[key].clone(), self.strings[val].clone());
+                }
+
+                Opcode::ImportModule(self.strings[idx].clone(), imports)
             },
             OP_DUP => Opcode::Dup,
             OP_SUPER => {
@@ -462,7 +472,7 @@ impl Vm {
         Ok(ret)
     }
 
-    fn run(&mut self) -> InterpretResult {
+    fn run(&mut self) {
         'mainloop: loop {
             let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
             if let Some(msg) = &fiber.error {
@@ -511,7 +521,7 @@ impl Vm {
                             let mut fiber = self.fibers.last_mut().unwrap().borrow_mut();
                             fiber.push(ret);
                         } else {
-                            return InterpretResult::Ok;
+                            return;
                         }
                     }
                 },
@@ -849,8 +859,14 @@ impl Vm {
                     let var = fiber.stack.last().unwrap().clone();
                     fiber.push(var);
                 },
-                Opcode::ImportModule(name) => {
-                    panic!("IMPORT {name}", );
+                Opcode::ImportModule(name, imports) => {
+                    let fname = format!("{name}.rock");
+                    let vm = execute_script(&fname, false).unwrap();
+                    for (name, value) in vm.variables {
+                        if imports.contains_key(&name) {
+                            self.variables.insert(imports.get(&name).unwrap().clone(), value);
+                        }
+                    }
                 },
                 Opcode::DumpStack => {
                     fiber.dump_stack(&format!("opcode [ip: {:#X}]", ip));
@@ -918,14 +934,17 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+    execute_script(&args.filename, args.disassemble);
+}
 
+fn execute_script(filename: &str, disassemble: bool) -> Option<Vm> {
     let mut vm = Vm::new();
     core::register(&mut vm);
-    vm.load(&args.filename).unwrap();
+    vm.load(&filename).unwrap();
 
-    if args.disassemble {
+    if disassemble {
         vm.disassemble_all();
-        return;
+        return None;
     }
 
     let test = vm.variables.get("$self").unwrap();
@@ -937,6 +956,8 @@ fn main() {
     vm.fibers.last_mut().unwrap().borrow_mut().push(Value::Class(test_class.clone()));
     vm.call_method(&test_class.borrow(), "main", 0, &test_class.borrow().name);
     vm.run();
+
+    Some(vm)
 }
 
 fn read_string(f: &mut File) -> Rc<str> {

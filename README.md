@@ -212,7 +212,12 @@ Identical to `OP_JUMP_IF` but jumps backwards.
 
 ### OP_IMPORT_MODULE (30)
 
-Load another file and import its symbols. *Unimplemented*
+The first 2 bytes are an index into the `strings` array to get the filename to import (`.rock` is automatically added).\
+The next 2 bytes are the number of arguments.\
+Each argument has that format:
+
+* 2 bytes for the name in the symbol in the imported file, that is an index into the `strings` array.
+* 2 bytes for the name for the symbol once in the importer file, that is an index into the `strings` array. (if you don't want to rename the symbol, set both to the same index)
 
 ### OP_SUPER (31)
 
