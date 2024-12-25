@@ -16,6 +16,12 @@ const VAL_BOOL: u8 = 2;
 const VAL_INTEGER: u8 = 3;
 const VAL_FLOAT: u8 = 4;
 const VAL_STRING: u8 = 5;
+const VAL_CLASS: u8 = 6;
+const VAL_OBJECT: u8 = 7;
+const VAL_LIST: u8 = 8;
+const VAL_CLOSURE: u8 = 9;
+const VAL_FIBER: u8 = 10;
+const VAL_POINTER: u8 = 11;
 
 #[derive(Debug, Clone)]
 enum Opcode {
@@ -50,6 +56,8 @@ enum Opcode {
     LoopIf(u8),
     Dup,
     ImportModule(Rc<str>, HashMap<Rc<str>, Rc<str>>),
+    Cast(u8),
+    Is(u8),
 
     DumpStack,
 }
@@ -85,6 +93,8 @@ const OP_DUP: u8 = 28;
 const OP_LOOP_IF: u8 = 29;
 const OP_IMPORT_MODULE: u8 = 30;
 const OP_SUPER: u8 = 31;
+const OP_CAST: u8 = 32;
+const OP_IS: u8 = 33;
 const OP_DUMP_STACK: u8 = 255;
 
 #[derive(Debug, Clone)]
@@ -462,6 +472,16 @@ impl Vm {
                 *i += 1;
                 let args = buf[*i - 1];
                 Opcode::Super(self.strings[idx].clone(), args)
+            },
+            OP_CAST => {
+                *i += 1;
+                let type_ = (&buf[(*i - 1)..*i]).read_u8()?;
+                Opcode::Cast(type_)
+            },
+            OP_IS => {
+                *i += 1;
+                let type_ = (&buf[(*i - 1)..*i]).read_u8()?;
+                Opcode::Is(type_)
             },
             _ => {
                 println!("{:?}", buf);
@@ -867,6 +887,82 @@ impl Vm {
                             self.variables.insert(imports.get(&name).unwrap().clone(), value);
                         }
                     }
+                },
+                Opcode::Cast(t) => {
+                    let var = fiber.stack.pop().unwrap();
+                    let new_var = match t {
+                        VAL_NULL => Value::Null,
+                        VAL_BOOL => {
+                            match var {
+                                Value::Bool(b) => Value::Bool(b),
+                                Value::Integer(i) => Value::Bool(i != 0),
+                                Value::Float(f) => Value::Bool(f != 0.0),
+                                Value::String(s) => Value::Bool(s.len() > 0),
+                                _ => Value::Bool(false),
+                            }
+                        },
+                        VAL_INTEGER => {
+                            match var {
+                                Value::Bool(b) => Value::Integer(if b { 1 } else { 0 }),
+                                Value::Integer(i) => Value::Integer(i),
+                                Value::Float(f) => Value::Integer(f as i32),
+                                Value::String(s) => {
+                                    if let Ok(val) = s.parse::<i32>() {
+                                        Value::Integer(val)
+                                    } else {
+                                        Value::Integer(0)
+                                    }
+                                },
+                                _ => Value::Integer(0),
+                            }
+                        },
+                        VAL_FLOAT => {
+                            match var {
+                                Value::Bool(b) => Value::Float(if b { 1.0 } else { 0.0 }),
+                                Value::Integer(i) => Value::Float(i as f32),
+                                Value::Float(f) => Value::Float(f),
+                                Value::String(s) => {
+                                    if let Ok(val) = s.parse::<f32>() {
+                                        Value::Float(val)
+                                    } else {
+                                        Value::Float(0.0)
+                                    }
+                                },
+                                _ => Value::Float(0.0),
+                            }
+                        },
+                        VAL_STRING => {
+                            match var {
+                                Value::Null => Value::String("null".into()),
+                                Value::Bool(b) => Value::String(Rc::from(b.to_string())),
+                                Value::Integer(i) => Value::String(Rc::from(i.to_string())),
+                                Value::Float(f) => Value::String(Rc::from(f.to_string())),
+                                Value::String(s) => Value::String(s),
+                                _ => Value::String("".into()),
+                            }
+                        },
+                        _ => unreachable!(),
+                    };
+                    
+                    fiber.push(new_var);
+                },
+                Opcode::Is(t) => {
+                    let var = fiber.stack.pop().unwrap();
+                    let res = match var {
+                        Value::Null => t == VAL_NULL,
+                        Value::Bool(_) => t == VAL_BOOL,
+                        Value::Integer(_) => t == VAL_INTEGER,
+                        Value::Float(_) => t == VAL_FLOAT,
+                        Value::String(_) => t == VAL_STRING,
+                        Value::Class(_) => t == VAL_CLASS,
+                        Value::Object(_) => t == VAL_OBJECT,
+                        Value::List(_) => t == VAL_LIST,
+                        Value::Closure(_) => t == VAL_CLOSURE,
+                        Value::Fiber(_) => t == VAL_FIBER,
+                        Value::Pointer(_) => t == VAL_POINTER,
+                    };
+
+                    fiber.push(Value::Bool(res));
                 },
                 Opcode::DumpStack => {
                     fiber.dump_stack(&format!("opcode [ip: {:#X}]", ip));

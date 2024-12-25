@@ -223,6 +223,33 @@ Each argument has that format:
 
 Identical to `OP_CALL` except it calls the same named method in the parent class.
 
+### OP_CAST (32)
+
+Converts the top value of the stack to the specified type (following byte).
+
+The next byte tells the type to convert it to:\
+`1`: `null`. Equivalent to `pop()` followed by `push(null)`.\
+`2`: `bool`. Non-empty strings and non-zero numbers become `true`, otherwise `false`.\
+`3`: `integer`. Non-integer strings become `0`, truncates floats.\
+`4`: `float`. Non-integer strings become `0.0`.\
+`5`: `string`.
+
+### OP_IS (33)
+
+Pops the top value of the stack and pushes a `bool` if the value is of the specified type (following byte).
+
+`1`: `null`.
+`2`: `bool`.
+`3`: `integer`.
+`4`: `float`.
+`5`: `string`.
+`6`: `class`.
+`7`: `object`.
+`8`: `list`.
+`9`: `closure`.
+`10`: `fiber`.
+`11`: `pointer`.
+
 ### OP_DUMP_STACK (255)
 
 Dump the current stack.
